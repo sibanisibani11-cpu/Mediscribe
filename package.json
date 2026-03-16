@@ -1,0 +1,225 @@
+{
+  "name": "mediscribe-app",
+  "version": "1.0.4",
+  "private": true,
+  "main": "electron/main.js",
+  "description": "AI-Powered Medical Transcription for Healthcare Professionals",
+  "homepage": "https://mediapp.store",
+  "author": {
+    "name": "MediScribe Team",
+    "email": "support@mediapp.store"
+  },
+  "scripts": {
+    "dev": "next dev --turbopack -p 9002",
+    "electron": "electron .",
+    "electron:dev": "pkill -f \"electron .\" || true; lsof -i :9002 -i :8081 -i :8080 -t | xargs kill -9 2>/dev/null || true; concurrently \"npm run dev\" \"wait-on http://localhost:9002 && NODE_ENV=development electron .\"",
+    "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
+    "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
+    "build": "NODE_ENV=production next build",
+    "build:electron": "npm run build && electron-builder",
+    "build:all": "npm run build && electron-builder --mac --win --linux",
+    "dist": "npm run build && electron-builder --publish=never",
+    "bundle-models": "node scripts/bundle-models.js",
+    "bundle-ollama": "node scripts/bundle-ollama.js",
+    "bundle-ffmpeg": "node scripts/bundle-ffmpeg.js",
+    "bundle-whisper": "node scripts/bundle-whisper.js",
+    "prebuild": "npm run bundle-models && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@genkit-ai/google-genai": "^1.20.0",
+    "@genkit-ai/next": "^1.20.0",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.2",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-progress": "^1.1.8",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.1.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toast": "^1.2.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "dictionary-en": "^4.0.0",
+    "dotenv": "^16.5.0",
+    "form-data": "^4.0.5",
+    "genkit": "^1.20.0",
+    "google-auth-library": "^10.5.0",
+    "googleapis": "^169.0.0",
+    "lucide-react": "^0.475.0",
+    "next": "15.5.9",
+    "next-themes": "^0.4.0",
+    "nspell": "^2.1.5",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "resend": "^6.9.1",
+    "tailwind-merge": "^3.0.1",
+    "tailwindcss-animate": "^1.0.7",
+    "uiohook-napi": "^1.5.4",
+    "whisper-node": "^1.1.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19.2.1",
+    "@types/react-dom": "^19.2.1",
+    "concurrently": "^9.1.0",
+    "electron": "^39.2.7",
+    "electron-builder": "^24.13.3",
+    "genkit-cli": "^1.20.0",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.mediscribe.app",
+    "productName": "MediScribe",
+    "copyright": "Copyright 2025 MediScribe",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "!out/.cache/**/*",
+      "electron/**/*",
+      "preload.js",
+      "icon.png",
+      ".env",
+      "!node_modules/.cache/**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "extraFiles": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "resources/models",
+        "to": "models"
+      },
+      {
+        "from": "resources/bin",
+        "to": "bin"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": [
+        "dmg",
+        "zip",
+        "mas"
+      ],
+      "icon": "icon.png",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "hardenedRuntime": true,
+      "notarize": false
+    },
+    "mas": {
+      "category": "public.app-category.medical",
+      "entitlements": "build/entitlements.mas.plist",
+      "entitlementsInherit": "build/entitlements.mas.inherit.plist",
+      "provisioningProfile": "build/embedded.provisionprofile",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "msix",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png",
+      "publisherName": "MediScribe",
+      "verifyUpdateCodeSignature": false
+    },
+    "msix": {
+      "identityName": "mediapp.MediScribe",
+      "publisher": "CN=0A2D2A72-696C-488D-AB42-7004DF21E0C2",
+      "publisherDisplayName": "MediApp.store",
+      "applicationId": "MediScribe"
+    },
+    "linux": {
+      "category": "Office",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MediScribe",
+      "include": "build/installer.nsh"
+    },
+    "dmg": {
+      "format": "UDZO",
+      "title": "MediScribe ${version}",
+      "icon": "icon.png",
+      "background": "build/background.png",
+      "contents": [
+        {
+          "x": 110,
+          "y": 150,
+          "type": "file"
+        },
+        {
+          "x": 440,
+          "y": 150,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}
