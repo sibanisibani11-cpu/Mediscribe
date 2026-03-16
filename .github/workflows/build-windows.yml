@@ -1,36 +1,59 @@
-name: Build Windows AppX
+name: Build Windows AppX (MSIX)
 
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build-windows-appx:
     runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
+      # ── 2. Node setup with npm cache ───────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-    - name: Install Dependencies
-      run: npm ci
+      # ── 3. Install dependencies (skip post-install scripts that need binaries) ─
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
 
-    - name: Build Next.js
-      run: npm run build
+      # ── 4. Build Next.js (production static export) ────────────────────────
+      - name: Build Next.js App
+        run: npm run build
+        env:
+          NODE_ENV: production
 
-    - name: Build MSIX for Microsoft Store
-      run: npx electron-builder --win msix
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ── 5. Build AppX / MSIX with electron-builder ────────────────────────
+      #    We use --win appx (electron-builder v24 uses "appx", not "msix")
+      #    --publish=never so it doesn't try to upload anywhere
+      - name: Build AppX Package
+        run: npx electron-builder --win appx --x64 --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: MediScribe-MSIX
-        path: dist-electron/*.msix
+      # ── 6. List build output (for debugging) ──────────────────────────────
+      - name: List dist-electron contents
+        run: dir dist-electron
+        shell: cmd
+
+      # ── 7. Upload .appx artifact ───────────────────────────────────────────
+      - name: Upload AppX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediScribe-${{ github.ref_name }}-AppX-x64
+          path: |
+            dist-electron/*.appx
+            dist-electron/*.appxupload
+          if-no-files-found: warn
+          retention-days: 30
