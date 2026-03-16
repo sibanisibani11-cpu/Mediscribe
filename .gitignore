@@ -1,0 +1,63 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+!/out/
+/out/*
+!/out/index.html
+!/out/_next/static/*
+
+# production
+/build
+!/build/
+/dist-electron/
+/resources/bin/
+/resources/models/
+/.cache/
+/public/.cache/
+/out/.cache/
+/build/*
+!/build/*.plist
+!/build/*.nsh
+!/build/*.png
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+.genkit/*
+.env*
+
+# firebase
+firebase-debug.log
+firestore-debug.log
+# Ignore large installer files to prevent git push errors
+/public/downloads/*.exe
+/public/downloads/*.dmg
+/public/downloads/*.AppImage

@@ -1,0 +1,43 @@
+
+> mediscribe-app@1.0.3 electron:dev
+> pkill -f "electron ." || true; lsof -i :9002 -i :8081 -i :8080 -t | xargs kill -9 2>/dev/null || true; concurrently "npm run dev" "wait-on http://localhost:9002 && NODE_ENV=development electron ."
+
+[0] 
+[0] > mediscribe-app@1.0.3 dev
+[0] > next dev --turbopack -p 9002
+[0] 
+[0]  ⚠ Specified "headers" will not automatically work with "output: export". See more info here: https://nextjs.org/docs/messages/export-no-custom-routes
+[0]  ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+[0]  We detected multiple lockfiles and selected the directory of /Users/kalpa/package-lock.json as the root directory.
+[0]  To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+[0]    See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+[0]  Detected additional lockfiles: 
+[0]    * /Users/kalpa/Documents/MediScribe v 1.0.2/package-lock.json
+[0] 
+[0]  ⚠ Specified "headers" will not automatically work with "output: export". See more info here: https://nextjs.org/docs/messages/export-no-custom-routes
+[0]    ▲ Next.js 15.5.9 (Turbopack)
+[0]    - Local:        http://localhost:9002
+[0]    - Network:      http://192.168.1.49:9002
+[0]    - Environments: .env
+[0] 
+[0]  ✓ Starting...
+[0]  ✓ Ready in 751ms
+[0]  ⚠ Webpack is configured while Turbopack is not, which may cause problems.
+[0]  ⚠ See instructions if you need to configure Turbopack:
+[0]   https://nextjs.org/docs/app/api-reference/next-config-js/turbopack
+[0] 
+[0]  ○ Compiling / ...
+[0]  ✓ Compiled / in 1684ms
+[0]  HEAD / 200 in 1935ms
+[0]  HEAD / 200 in 1394ms
+[0]  HEAD / 200 in 1992ms
+[0]  HEAD / 200 in 1992ms
+[0]  HEAD / 200 in 1929ms
+[0]  HEAD / 200 in 1676ms
+[0]  HEAD / 200 in 1177ms
+[0]  HEAD / 200 in 926ms
+[0]  HEAD / 200 in 675ms
+[0]  HEAD / 200 in 425ms
+[1] wait-on http://localhost:9002 && NODE_ENV=development electron . exited with code 0
+[0] [?25h
+[0] npm run dev exited with code 0

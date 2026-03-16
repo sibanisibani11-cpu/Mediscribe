@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XML_DIZ_INFO>
+	<MASTER_PAD_VERSION_INFO>
+		<MASTER_PAD_VERSION>3.11</MASTER_PAD_VERSION>
+		<MASTER_PAD_EDITOR>PADGen 3.1.1.51 http://www.padgen.org</MASTER_PAD_EDITOR>
+		<MASTER_PAD_INFO>This Highly Optimized XML file is an industry standard, used to store software descriptions and properties. It is used by hundreds of software download sites and archives globally. More information is available at http://www.asp-software.org</MASTER_PAD_INFO>
+	</MASTER_PAD_VERSION_INFO>
+	<Company_Info>
+		<Company_Name>MediScribe Team</Company_Name>
+		<Address_1 />
+		<Address_2 />
+		<City_Town />
+		<State_Province />
+		<Zip_Postal_Code />
+		<Country />
+		<Company_WebSite_URL>https://mediapp.store</Company_WebSite_URL>
+		<Contact_Info>
+			<Author_First_Name>MediScribe</Author_First_Name>
+			<Author_Last_Name>Team</Author_Last_Name>
+			<Author_Email>support@mediapp.store</Author_Email>
+			<Contact_First_Name>MediScribe</Contact_First_Name>
+			<Contact_Last_Name>Team</Contact_Last_Name>
+			<Contact_Email>support@mediapp.store</Contact_Email>
+		</Contact_Info>
+		<Support_Info>
+			<Sales_Email>support@mediapp.store</Sales_Email>
+			<Support_Email>support@mediapp.store</Support_Email>
+			<General_Email>support@mediapp.store</General_Email>
+			<Sales_Phone />
+			<Support_Phone />
+			<General_Phone />
+			<Fax_Phone />
+		</Support_Info>
+	</Company_Info>
+	<Program_Info>
+		<Program_Name>MediScribe</Program_Name>
+		<Program_Version>1.0.4</Program_Version>
+		<Program_Release_Month>02</Program_Release_Month>
+		<Program_Release_Day>11</Program_Release_Day>
+		<Program_Release_Year>2026</Program_Release_Year>
+		<Program_Cost_Dollars />
+		<Program_Cost_Other_Code />
+		<Program_Cost_Other />
+		<Program_Type>Shareware</Program_Type>
+		<Program_Release_Status>New Release</Program_Release_Status>
+		<Program_Install_Support>Install and Uninstall</Program_Install_Support>
+		<Program_OS_Support>Windows 10, Windows 11, macOS Monterey, macOS Ventura, macOS Sonoma, macOS Sequoia, Linux (Ubuntu, Debian, Fedora, AppImage)</Program_OS_Support>
+		<Program_Language>English</Program_Language>
+		<Program_Change_Info>Midnight Cobalt Theme update, 3-Stage AI Verification, offline clinical models, and cross-platform stable builds for Windows, Mac (Intel/M-Series), and Linux.</Program_Change_Info>
+		<Program_Specific_Category>Medical</Program_Specific_Category>
+		<Program_Category>Home &amp; Education::Health &amp; Nutrition</Program_Category>
+		<Program_System_Requirements>Windows 10+, macOS 12.0+, or modern Linux distribution (x64/ARM64). High-performance CPU recommended for offline AI.</Program_System_Requirements>
+		<File_Info>
+			<File_Size_Bytes>943718400</File_Size_Bytes>
+			<File_Size_K>921600</File_Size_K>
+			<File_Size_MB>900</File_Size_MB>
+		</File_Info>
+		<Expire_Info>
+			<Has_Expire_Info>Y</Has_Expire_Info>
+			<Expire_Count>30</Expire_Count>
+			<Expire_Based_On>Days</Expire_Based_On>
+			<Expire_Other_Info>Trial version expires after 30 days or on March 31, 2026.</Expire_Other_Info>
+			<Expire_Year />
+			<Expire_Month />
+			<Expire_Day />
+		</Expire_Info>
+	</Program_Info>
+	<Program_Descriptions>
+		<English>
+			<Keywords>medical transcription, AI scribe, clinical documentation, doctor assistant, ASR, offline AI, whisper, medical AI</Keywords>
+			<Char_Desc_45>AI-Powered Medical Transcription for Doctors</Char_Desc_45>
+			<Char_Desc_80>AI-Powered Medical Transcription for Healthcare Professionals</Char_Desc_80>
+			<Char_Desc_250>MediScribe is an AI-powered medical transcription tool designed for healthcare professionals. It features 3-stage AI verification, offline clinical models, and a sleek Midnight Cobalt interface for seamless clinical documentation.</Char_Desc_250>
+			<Char_Desc_450>MediScribe is a professional AI-powered medical transcription application that empowers doctors to automate clinical documentation. With its unique 3-stage AI verification engine, it ensures hallucination-free output. The app operates with zero-latency locally using offline clinical models, protecting patient privacy while maintaining high accuracy across Windows, macOS, and Linux platforms.</Char_Desc_450>
+			<Char_Desc_2000>MediScribe is a state-of-the-art AI medical transcription solution tailored for the demanding workflows of healthcare professionals. 
+
+Key Features:
+- 3-Stage AI Verification: Our proprietary engine double-checks transcriptions against clinical context to eliminate AI hallucinations and ensure medical accuracy.
+- Offline Clinical Models: Process dictations entirely on your device. Patient data never leaves your computer, ensuring total privacy and HIPAA compliance alignment.
+- Midnight Cobalt Interface: A premium, high-contrast theme designed for focus and low eye strain during long clinical sessions.
+- Zero-Latency Floating Bubble: A lightweight control interface that stays on top of your EMR/EHR, allowing you to dictate directly into any field with a single click or hotkey.
+- Custom Medical Dictionary: Build and manage your own clinical vocabulary, ensuring the AI recognizes specialized terminology, drug names, and local acronyms.
+- Cross-Platform Support: Optimized native experience for Windows 10/11, macOS (Intel and Apple Silicon), and Linux.
+
+MediScribe v1.0.4 introduces significant performance enhancements and architectural stability updates, making it the most reliable AI scribe for your daily practice.</Char_Desc_2000>
+		</English>
+	</Program_Descriptions>
+	<Web_Info>
+		<Application_URLs>
+			<Application_Info_URL>https://mediapp.store</Application_Info_URL>
+			<Application_Order_URL>https://mediapp.store/pricing</Application_Order_URL>
+			<Application_Screenshot_URL>https://mediapp.store/images/screenshot.png</Application_Screenshot_URL>
+			<Application_Icon_URL>https://mediapp.store/images/icon.png</Application_Icon_URL>
+			<Application_XML_File_URL>https://mediapp.store/MediScribe_PAD.xml</Application_XML_File_URL>
+		</Application_URLs>
+		<Download_URLs>
+			<Primary_Download_URL>https://mediapp.store/downloads/MediScribe_Setup_1.0.4.exe</Primary_Download_URL>
+			<Secondary_Download_URL>https://mediapp.store/downloads/MediScribe_1.0.4_arm64.dmg</Secondary_Download_URL>
+			<Additional_Download_URL_1>https://mediapp.store/downloads/MediScribe_1.0.4.AppImage</Additional_Download_URL_1>
+			<Additional_Download_URL_2 />
+		</Download_URLs>
+	</Web_Info>
+	<Permissions>
+		<Allow_External_Distribution>Y</Allow_External_Distribution>
+		<BBS_Distribution_Allowed>Y</BBS_Distribution_Allowed>
+		<Distribution_Freeware>N</Distribution_Freeware>
+		<For_Hire_Distribution_Allowed>Y</For_Hire_Distribution_Allowed>
+	</Permissions>
+</XML_DIZ_INFO>
