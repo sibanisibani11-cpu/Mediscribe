@@ -126,9 +126,27 @@
     "mac": {
       "category": "public.app-category.medical",
       "target": [
-        "dmg",
-        "zip",
-        "mas"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "mas",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "icon": "icon.png",
       "entitlements": "build/entitlements.mac.plist",
