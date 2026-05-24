@@ -8,75 +8,132 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        include:
-          - os: windows-latest
-            platform: win
-          - os: macos-latest
-            platform: mac
-          - os: ubuntu-latest
-            platform: linux
-
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-
+  # ── Generate icon.ico (Windows needs it) ─────────────────────────────────
+  generate-icons:
+    name: Generate Platform Icons
+    runs-on: ubuntu-latest
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node setup with npm cache ───────────────────────────────────────
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      # ── 3. Install dependencies ──────────────────────────────────────────
+      - name: Install icon generation deps
+        run: npm install --no-save sharp png-to-ico
+
+      - name: Generate icon.ico
+        run: node scripts/generate-icons.js
+
+      - name: Upload icon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-icons
+          path: build/icon.ico
+          retention-days: 1
+
+  # ── Platform builds ───────────────────────────────────────────────────────
+  build:
+    name: Build for ${{ matrix.os }}
+    needs: generate-icons
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            target_platform: win32
+          - os: macos-latest
+            platform: mac
+            target_platform: darwin
+          - os: ubuntu-latest
+            platform: linux
+            target_platform: linux
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    steps:
+      # ── 1. Checkout ───────────────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # ── 2. Download generated icons ───────────────────────────────────────
+      - name: Download platform icons
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-icons
+          path: build/
+
+      # ── 3. Node setup ──────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 4. Install dependencies ───────────────────────────────────────────
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
-      # ── 4. Prebuild Models and Binaries ────────────────────────────────────
-      # This downloads Whisper models, Ollama, FFmpeg, etc.
-      - name: Prebuild Bundling
-        run: npm run prebuild
+      # ── 5. Rebuild native modules for the current platform ─────────────────
+      - name: Rebuild native modules
+        run: npx electron-rebuild --force --module-dir .
+        env:
+          npm_config_platform: ${{ matrix.target_platform }}
 
-      # ── 5. Build Next.js ──────────────────────────────────────────────────
+      # ── 6. Bundle binaries ────────────────────────────────────────────────
+      - name: Bundle Models and Binaries
+        run: npm run prebuild
+        env:
+          TARGET_PLATFORM: ${{ matrix.target_platform }}
+
+      # ── 7. Build Next.js ──────────────────────────────────────────────────
       - name: Build Next.js App
         run: npm run build
         env:
           NODE_ENV: production
 
-      # ── 6. Build and Package Electron ──────────────────────────────────────
-      # Note: For macOS notarization and MAS, the user needs to set up secrets:
-      # APPLE_ID, APPLE_ID_PASSWORD, APPLE_TEAM_ID, CSC_LINK, CSC_KEY_PASSWORD
+      # ── 8. Build and Package Electron ─────────────────────────────────────
+      #    On a version tag: publish to GitHub Releases (enables auto-update)
+      #    On branch push:   build only, no publish
       - name: Build Electron App
-        run: npx electron-builder --${{ matrix.platform }} --publish=never
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            npx electron-builder --${{ matrix.platform }} --publish=always
+          else
+            npx electron-builder --${{ matrix.platform }} --publish=never
+          fi
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS certificate and notarization secrets
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-      # ── 7. Upload Artifacts ───────────────────────────────────────────────
+      # ── 9. Upload Artifacts ───────────────────────────────────────────────
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: MediScribe-${{ matrix.platform }}-artifacts
           path: |
             dist-electron/*.exe
-            dist-electron/*.appx
+            dist-electron/*.msi
             dist-electron/*.dmg
             dist-electron/*.pkg
             dist-electron/*.AppImage
             dist-electron/*.deb
             dist-electron/*.zip
+            dist-electron/*.appx
+            dist-electron/*.msix
+            dist-electron/*.blockmap
+            dist-electron/latest*.yml
           if-no-files-found: warn
           retention-days: 30

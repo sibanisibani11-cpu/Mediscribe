@@ -13,24 +13,26 @@
     "dev": "next dev --turbopack -p 9002",
     "electron": "electron .",
     "electron:dev": "pkill -f \"electron .\" || true; lsof -i :9002 -i :8081 -i :8080 -t | xargs kill -9 2>/dev/null || true; concurrently \"npm run dev\" \"wait-on http://localhost:9002 && NODE_ENV=development electron .\"",
-    "genkit:dev": "genkit start -- tsx src/ai/dev.ts",
-    "genkit:watch": "genkit start -- tsx --watch src/ai/dev.ts",
     "build": "NODE_ENV=production next build",
     "build:electron": "npm run build && electron-builder",
     "build:all": "npm run build && electron-builder --mac --win --linux",
+    "build:dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --win --linux --publish=never",
+    "build:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish=never",
+    "build:win": "npm run build && electron-builder --win --publish=never",
+    "build:linux": "npm run build && electron-builder --linux --publish=never",
     "dist": "npm run build && electron-builder --publish=never",
+    "dist:personal-win": "export NEXT_PUBLIC_PERSONAL_LIFETIME_FREE=true && touch electron/lifetime.lock && npm run build && electron-builder --win --publish=never && rm electron/lifetime.lock",
     "bundle-models": "node scripts/bundle-models.js",
     "bundle-ollama": "node scripts/bundle-ollama.js",
     "bundle-ffmpeg": "node scripts/bundle-ffmpeg.js",
     "bundle-whisper": "node scripts/bundle-whisper.js",
-    "prebuild": "npm run bundle-models && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper",
+    "generate-icons": "node scripts/generate-icons.js",
+    "prebuild": "npm run generate-icons && npm run bundle-models && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@genkit-ai/google-genai": "^1.20.0",
-    "@genkit-ai/next": "^1.20.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-label": "^2.1.2",
@@ -46,8 +48,8 @@
     "cmdk": "^1.1.1",
     "dictionary-en": "^4.0.0",
     "dotenv": "^16.5.0",
+    "electron-updater": "^6.8.3",
     "form-data": "^4.0.5",
-    "genkit": "^1.20.0",
     "google-auth-library": "^10.5.0",
     "googleapis": "^169.0.0",
     "lucide-react": "^0.475.0",
@@ -64,22 +66,30 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^20",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
     "concurrently": "^9.1.0",
     "electron": "^39.2.7",
     "electron-builder": "^24.13.3",
-    "genkit-cli": "^1.20.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5",
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.mediscribe.app",
+    "appId": "com.mediapp.mediscribe",
     "productName": "MediScribe",
+    "afterSign": "scripts/notarize.js",
     "copyright": "Copyright 2025 MediScribe",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Kalpa-netizen",
+        "repo": "Mediscribe"
+      }
+    ],
     "directories": {
       "output": "dist-electron",
       "buildResources": "build"
@@ -139,20 +149,12 @@
             "x64",
             "arm64"
           ]
-        },
-        {
-          "target": "mas",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
         }
       ],
-      "icon": "icon.png",
+      "icon": "build/icon.png",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "gatekeeperAssess": false,
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "notarize": false
     },
     "mas": {
@@ -179,13 +181,15 @@
         {
           "target": "appx",
           "arch": [
-            "x64"
+            "x64",
+            "arm64"
           ]
         }
       ],
-      "icon": "icon.png",
+      "icon": "build/icon.ico",
       "publisherName": "MediScribe",
-      "verifyUpdateCodeSignature": false
+      "verifyUpdateCodeSignature": false,
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "appx": {
       "identityName": "mediapp.MediScribe",
@@ -210,7 +214,7 @@
           ]
         }
       ],
-      "icon": "icon.png"
+      "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
@@ -219,6 +223,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "MediScribe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "include": "build/installer.nsh"
     },
     "dmg": {
