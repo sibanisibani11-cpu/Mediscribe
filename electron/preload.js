@@ -73,8 +73,19 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Activation & Licensing
   checkActivation: () => ipcRenderer.invoke('check-activation'),
+  getLicenseDetails: () => ipcRenderer.invoke('get-license-details'),
   activateApp: (code) => ipcRenderer.invoke('activate-app', code),
   getActivationId: () => ipcRenderer.invoke('get-activation-id'),
+  activateAfterPayment: (paymentData) => ipcRenderer.invoke('activate-after-payment', paymentData),
+
+  // Auto-Updater
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  onUpdateStatus: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('update-status', handler);
+    return () => ipcRenderer.removeListener('update-status', handler);
+  },
 
   // Dictionary
   getDictionary: () => ipcRenderer.invoke('get-dictionary'),
@@ -100,6 +111,21 @@ contextBridge.exposeInMainWorld('electron', {
   // Keyword Listener (automatic expansion in Word)
   startKeywordListener: () => ipcRenderer.invoke('start-keyword-listener'),
   stopKeywordListener: () => ipcRenderer.invoke('stop-keyword-listener'),
+  checkAccessibilityPermission: () => ipcRenderer.invoke('check-accessibility-permission'),
+  requestAccessibilityPermission: () => ipcRenderer.invoke('request-accessibility-permission'),
+  openAccessibilitySettings: () => ipcRenderer.invoke('open-accessibility-settings'),
+
+  // Template Library
+  getTemplates: () => ipcRenderer.invoke('get-templates'),
+  addTemplate: (data) => ipcRenderer.invoke('add-template', data),
+  removeTemplate: (id) => ipcRenderer.invoke('remove-template', id),
+  updateTemplate: (data) => ipcRenderer.invoke('update-template', data),
+  saveTemplateFile: (data) => ipcRenderer.invoke('save-template-file', data),
+  deleteTemplateFile: (filePath) => ipcRenderer.invoke('delete-template-file', filePath),
+
+  // Template Listener (automatic template expansion)
+  startTemplateListener: () => ipcRenderer.invoke('start-template-listener'),
+  stopTemplateListener: () => ipcRenderer.invoke('stop-template-listener'),
 
   // Typing Mode Management
   getTypingMode: () => ipcRenderer.invoke('get-typing-mode'),

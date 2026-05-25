@@ -13,6 +13,12 @@ const URLS = {
     linux: 'https://ollama.com/download/ollama-linux-amd64.tgz'
 };
 
+function removeDirSync(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+    }
+}
+
 async function bundleOllama() {
     console.log('📦 Bundling Ollama for multiple platforms...');
 
@@ -36,13 +42,22 @@ async function bundleOllama() {
         const url = URLS[platform];
         if (!url) continue;
 
+        // Skip if binary already exists and is valid
+        const binName = platform === 'win32' ? 'ollama.exe' : 'ollama';
+        const binPath = path.join(RESOURCES_DIR, binName);
+        if (fs.existsSync(binPath) && fs.statSync(binPath).size > 5 * 1024 * 1024) {
+            console.log(`✅ Ollama for ${platform} already exists, skipping download.`);
+            continue;
+        }
+
         console.log(`\n--- Bundling for ${platform} ---`);
 
         if (!fs.existsSync(TEMP_DIR)) {
             fs.mkdirSync(TEMP_DIR, { recursive: true });
         }
 
-        const archiveName = `ollama-${platform}.zip`;
+        const ext = platform === 'linux' ? 'tgz' : 'zip';
+        const archiveName = `ollama-${platform}.${ext}`;
         const archivePath = path.join(TEMP_DIR, archiveName);
 
         console.log(`⬇️  Downloading ${archiveName}...`);
@@ -50,6 +65,7 @@ async function bundleOllama() {
             execSync(`curl -L -o "${archivePath}" "${url}"`, { stdio: 'inherit' });
         } catch (e) {
             console.error(`❌ Download failed for ${platform}:`, e.message);
+            removeDirSync(TEMP_DIR);
             continue;
         }
 
@@ -61,8 +77,8 @@ async function bundleOllama() {
                 execSync(`unzip -o -j "${archivePath}" "Ollama.app/Contents/Resources/ollama" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
                 execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
             } else if (platform === 'win32') {
-                // Windows: Extract ollama.exe
-                execSync(`tar -xf "${archivePath}" -C "${RESOURCES_DIR}" ollama.exe`, { stdio: 'inherit' });
+                // Windows: ollama-windows-amd64.zip contains ollama.exe at the root
+                execSync(`unzip -o -j "${archivePath}" "ollama.exe" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
             } else if (platform === 'linux') {
                 // Linux: Extract ollama binary from tgz
                 // The ollama-linux-amd64.tgz has a single 'bin/ollama' file
@@ -75,7 +91,7 @@ async function bundleOllama() {
             console.error(`❌ Extraction failed for ${platform}:`, e.message);
         } finally {
             // Cleanup temp for this platform
-            execSync(`rm -rf "${TEMP_DIR}"`);
+            removeDirSync(TEMP_DIR);
         }
     }
 }

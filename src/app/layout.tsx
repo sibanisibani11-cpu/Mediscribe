@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 export const metadata: Metadata = {
   title: 'MediScribe',
   description: 'AI-powered medical transcription',
+  // Note: No favicon - absolute /favicon.ico path breaks Electron file:// protocol
 };
 
 export default function RootLayout({
@@ -16,9 +17,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        {/* Google Fonts removed: external fetches block rendering in packaged Electron app */}
+        {/* System fonts are used instead via globals.css font-family stack */}
       </head>
       <body className="font-body antialiased">
         <ThemeProvider

@@ -280,7 +280,7 @@ export function DictionaryManager() {
             <div className="flex flex-col gap-3 glass-card p-4 rounded-xl border-blue-100/50 dark:border-blue-900/20">
                 <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                        <Plus className="h-3 w-3 text-blue-500" />
+                        <Plus className="h-3 w-3 text-violet-500" />
                         Add Medical Terms
                     </label>
                     <span className="text-[10px] text-muted-foreground italic">Use commas to add multiple terms</span>
@@ -297,7 +297,7 @@ export function DictionaryManager() {
                                 }
                             }}
                             placeholder="Type terms here... e.g. HbA1c, Nephropathy, Cardiomyopathy"
-                            className="w-full min-h-[44px] max-h-[120px] px-4 py-3 bg-white dark:bg-black/40 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all focus:ring-2 focus:ring-blue-500 outline-none resize-none custom-scrollbar shadow-inner"
+                            className="w-full min-h-[44px] max-h-[120px] px-4 py-3 bg-white dark:bg-black/40 border border-slate-200 dark:border-slate-800 rounded-lg text-sm transition-all focus:ring-2 focus:ring-violet-500 outline-none resize-none custom-scrollbar shadow-inner"
                         />
                     </div>
                     <Button
@@ -314,9 +314,9 @@ export function DictionaryManager() {
             <div className="flex-1 flex flex-col gap-4">
                 <div className="flex items-center justify-between px-2">
                     <div className="flex items-center gap-2">
-                        <Book className="h-4 w-4 text-blue-500" />
+                        <Book className="h-4 w-4 text-violet-500" />
                         <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Dictionary Explorer</h3>
-                        <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">
+                        <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-violet-600 dark:text-blue-300 px-2 py-0.5 rounded-full font-bold">
                             {dictionary.length} Terms
                         </span>
                         <Button
@@ -326,7 +326,7 @@ export function DictionaryManager() {
                                 fetchDictionary();
                                 toast({ description: "Data refreshed" });
                             }}
-                            className="h-7 w-7 p-0 ml-1 text-slate-400 hover:text-blue-600 rounded-full"
+                            className="h-7 w-7 p-0 ml-1 text-slate-400 hover:text-violet-600 rounded-full"
                             title="Refresh Data"
                         >
                             <RefreshCw className="h-3.5 w-3.5" />
@@ -338,7 +338,7 @@ export function DictionaryManager() {
                                         variant="outline"
                                         size="sm"
                                         disabled={isSyncing}
-                                        className="h-7 px-2 text-[10px] font-bold border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 flex items-center gap-1.5 rounded-lg shadow-sm ml-2"
+                                        className="h-7 px-2 text-[10px] font-bold border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-violet-50 dark:hover:bg-blue-900/20 text-violet-600 flex items-center gap-1.5 rounded-lg shadow-sm ml-2"
                                     >
                                         {isSyncing ? (
                                             <RefreshCw className="h-3 w-3 animate-spin" />
@@ -370,10 +370,10 @@ export function DictionaryManager() {
 
                                         <button
                                             onClick={() => handleSync('pull')}
-                                            className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 rounded-lg transition-colors text-left"
+                                            className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-blue-900/20 hover:text-violet-600 rounded-lg transition-colors text-left"
                                         >
                                             <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                                                <CloudDownload className="h-4 w-4 text-blue-600" />
+                                                <CloudDownload className="h-4 w-4 text-violet-600" />
                                             </div>
                                             <div>
                                                 <div className="font-bold">Pull from Cloud</div>
@@ -394,7 +394,7 @@ export function DictionaryManager() {
                                 {isSyncing ? (
                                     <RefreshCw className="h-3 w-3 animate-spin" />
                                 ) : (
-                                    <Cloud className="h-3 w-3 group-hover:text-blue-500 transition-colors" />
+                                    <Cloud className="h-3 w-3 group-hover:text-violet-500 transition-colors" />
                                 )}
                                 {isSyncing ? "Connecting..." : "Connect Cloud"}
                             </Button>
@@ -405,7 +405,7 @@ export function DictionaryManager() {
                             variant="ghost"
                             size="sm"
                             onClick={handleSort}
-                            className="h-8 gap-2 text-xs text-slate-500 hover:text-blue-600 font-medium"
+                            className="h-8 gap-2 text-xs text-slate-500 hover:text-violet-600 font-medium"
                         >
                             <SortAsc className="h-3.5 w-3.5" />
                             Sort A-Z
@@ -418,7 +418,7 @@ export function DictionaryManager() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={toggleSelectAll}
-                                    className="h-8 text-xs text-slate-500 hover:text-blue-600 font-medium"
+                                    className="h-8 text-xs text-slate-500 hover:text-violet-600 font-medium"
                                 >
                                     {selectedWords.size === dictionary.length ? "Deselect All" : "Select All"}
                                 </Button>
@@ -462,9 +462,9 @@ export function DictionaryManager() {
                                         className={cn(
                                             "group flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all border cursor-pointer",
                                             editingWord === word
-                                                ? "bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 shadow-md ring-2 ring-blue-500/10 min-w-[200px]"
+                                                ? "bg-violet-50 dark:bg-blue-900/30 border-blue-300 dark:border-violet-600 shadow-md ring-2 ring-violet-500/10 min-w-[200px]"
                                                 : selectedWords.has(word)
-                                                    ? "bg-blue-50/50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+                                                    ? "bg-violet-50/50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
                                                     : "bg-white/80 dark:bg-black/30 border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm hover:translate-y-[-1px]"
                                         )}
                                     >
@@ -473,7 +473,7 @@ export function DictionaryManager() {
                                                 className={cn(
                                                     "w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors shrink-0",
                                                     selectedWords.has(word)
-                                                        ? "bg-blue-500 border-blue-500 text-white"
+                                                        ? "bg-violet-500 border-violet-500 text-white"
                                                         : "border-slate-300 dark:border-slate-600"
                                                 )}
                                             >
@@ -513,7 +513,7 @@ export function DictionaryManager() {
                                         ) : (
                                             <>
                                                 <span
-                                                    className="text-[13px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer hover:text-blue-600 transition-colors whitespace-nowrap"
+                                                    className="text-[13px] font-semibold text-slate-700 dark:text-slate-200 cursor-pointer hover:text-violet-600 transition-colors whitespace-nowrap"
                                                     onClick={() => handleStartEdit(word)}
                                                 >
                                                     {word}
@@ -521,7 +521,7 @@ export function DictionaryManager() {
                                                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1 border-l border-slate-200 dark:border-slate-700 pl-1.5">
                                                     <button
                                                         onClick={() => handleStartEdit(word)}
-                                                        className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
+                                                        className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-blue-900/30 rounded"
                                                         title="Edit"
                                                     >
                                                         <Edit2 className="h-3 w-3" />

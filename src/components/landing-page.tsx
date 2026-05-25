@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, HelpCircle, Crown, LayoutTemplate } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -8,10 +8,12 @@ import { useToast } from "@/hooks/use-toast";
 import { WhatsNewModal } from "./whats-new-modal";
 
 interface LandingPageProps {
-  onSelectMode: (mode: 'dictation' | 'keyword' | 'upload') => void;
+  onSelectMode: (mode: 'dictation' | 'keyword' | 'upload' | 'templates') => void;
+  onShowInstructions: () => void;
+  onShowPricing: () => void;
 }
 
-export function LandingPage({ onSelectMode }: LandingPageProps) {
+export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }: LandingPageProps) {
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [appVersion, setAppVersion] = useState<string>("");
@@ -116,7 +118,7 @@ export function LandingPage({ onSelectMode }: LandingPageProps) {
               <div className="relative bg-white dark:bg-slate-950 rounded-[23px] p-6 flex flex-col md:flex-row items-center gap-6">
                 {/* Visual Accent */}
                 <div className="shrink-0 w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center relative">
-                  <Sparkles className="h-8 w-8 text-blue-600 animate-pulse" />
+                  <Sparkles className="h-8 w-8 text-violet-600 animate-pulse" />
                   <div className="absolute -top-1 -right-1 flex h-4 w-4">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-4 w-4 bg-purple-500"></span>
@@ -126,7 +128,7 @@ export function LandingPage({ onSelectMode }: LandingPageProps) {
                 {/* Content */}
                 <div className="flex-1 text-left space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                    <span className="text-[10px] font-black text-violet-600 bg-violet-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-full uppercase tracking-tighter">
                       Update Available v{latestVersion}
                     </span>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
@@ -170,11 +172,11 @@ export function LandingPage({ onSelectMode }: LandingPageProps) {
         )}
 
         {appVersion && (
-          <div className="mt-4 p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-2 duration-1000">
+          <div className="mt-4 p-3 rounded-xl bg-violet-500/5 border border-violet-500/20 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-2 duration-1000">
             <div className="flex items-center justify-center gap-2">
-              <div className="text-[10px] font-black text-white bg-blue-600 px-1.5 py-0.5 rounded italic uppercase leading-none">Pro Tip</div>
+              <div className="text-[10px] font-black text-white bg-violet-600 px-1.5 py-0.5 rounded italic uppercase leading-none">Pro Tip</div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">
-                Click the floating bubble in <span className="text-blue-600">Keyword Mode</span> to pause expansion!
+                Click the floating bubble in <span className="text-violet-600">Keyword Mode</span> to pause expansion!
               </p>
             </div>
           </div>
@@ -183,57 +185,102 @@ export function LandingPage({ onSelectMode }: LandingPageProps) {
         <p className="text-sm text-muted-foreground/80 max-w-xs mx-auto font-medium mt-4">
           Select how you want to input text today.
         </p>
+
+        <div className="flex flex-col items-center gap-2 mt-2">
+          <Button
+            variant="outline"
+            onClick={onShowInstructions}
+            className="h-10 px-6 rounded-2xl bg-violet-600/10 border-violet-600/30 text-blue-700 dark:text-blue-300 hover:bg-violet-600 hover:text-white transition-all font-black text-xs flex gap-2 shadow-sm group animate-in slide-in-from-bottom-2 duration-1000"
+          >
+            <BookOpen className="h-4 w-4 group-hover:scale-110 transition-transform" />
+            HOW TO USE MEDISCRIBE
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
+            </span>
+          </Button>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Complete Guide for Beginners</span>
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={onShowPricing}
+            className="h-10 px-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-white transition-all font-black text-xs flex gap-2 shadow-sm group"
+          >
+            <Crown className="h-4 w-4 group-hover:scale-110 transition-transform" />
+            VIEW PRICING & PLANS
+          </Button>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Monthly & Yearly Subscriptions</span>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
         {/* Dictation Card */}
         <button
           onClick={() => onSelectMode('dictation')}
-          className="group relative flex flex-col items-center p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="group relative flex flex-col items-center p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-violet-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
-          <div className="h-24 w-24 rounded-full cobalt-gradient flex items-center justify-center mb-6 shadow-lg group-hover:shadow-blue-500/25 transition-shadow">
-            <Mic className="h-10 w-10 text-white" />
+          <div className="h-20 w-20 rounded-full cobalt-gradient flex items-center justify-center mb-4 shadow-lg group-hover:shadow-violet-500/25 transition-shadow">
+            <Mic className="h-9 w-9 text-white" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Dictation Mode</h3>
-          <p className="text-sm text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
-            Record voice and transcribe directly into your documents using advanced AI models.
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Dictation</h3>
+          <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
+            Record voice and transcribe into documents with AI.
           </p>
-          <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-            <ArrowRight className="h-5 w-5 text-blue-600" />
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
+            <ArrowRight className="h-4 w-4 text-violet-600" />
           </div>
         </button>
 
         {/* Keyword Card */}
         <button
           onClick={() => onSelectMode('keyword')}
-          className="group relative flex flex-col items-center p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="group relative flex flex-col items-center p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-violet-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
-          <div className="h-24 w-24 rounded-full cobalt-gradient flex items-center justify-center mb-6 shadow-lg group-hover:shadow-blue-500/25 transition-shadow">
-            <Keyboard className="h-10 w-10 text-white" />
+          <div className="h-20 w-20 rounded-full cobalt-gradient flex items-center justify-center mb-4 shadow-lg group-hover:shadow-violet-500/25 transition-shadow">
+            <Keyboard className="h-9 w-9 text-white" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Keyword Mode</h3>
-          <p className="text-sm text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
-            Manage text expansions and use shortcuts to insert complex medical phrases instantly.
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Keyword</h3>
+          <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
+            Type shortcuts to insert full medical phrases instantly.
           </p>
-          <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-            <ArrowRight className="h-5 w-5 text-blue-600" />
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
+            <ArrowRight className="h-4 w-4 text-violet-600" />
           </div>
         </button>
 
         {/* Upload Card */}
         <button
           onClick={() => onSelectMode('upload')}
-          className="group relative flex flex-col items-center p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="group relative flex flex-col items-center p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-violet-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
         >
-          <div className="h-24 w-24 rounded-full cobalt-gradient flex items-center justify-center mb-6 shadow-lg group-hover:shadow-blue-500/25 transition-shadow">
-            <Upload className="h-10 w-10 text-white" />
+          <div className="h-20 w-20 rounded-full cobalt-gradient flex items-center justify-center mb-4 shadow-lg group-hover:shadow-violet-500/25 transition-shadow">
+            <Upload className="h-9 w-9 text-white" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Upload Mode</h3>
-          <p className="text-sm text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
-            Upload audio files and transcribe them to text using AI-powered speech recognition.
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Upload</h3>
+          <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
+            Upload audio files and transcribe with AI recognition.
           </p>
-          <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-            <ArrowRight className="h-5 w-5 text-blue-600" />
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
+            <ArrowRight className="h-4 w-4 text-violet-600" />
+          </div>
+        </button>
+
+        {/* Template Card */}
+        <button
+          onClick={() => onSelectMode('templates')}
+          className="group relative flex flex-col items-center p-6 rounded-2xl border border-violet-200 dark:border-violet-800/50 bg-violet-50/30 dark:bg-violet-900/10 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
+        >
+          <div className="h-20 w-20 rounded-full cobalt-gradient flex items-center justify-center mb-4 shadow-lg group-hover:shadow-violet-500/25 transition-shadow">
+            <LayoutTemplate className="h-9 w-9 text-white" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Templates</h3>
+          <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
+            Type 3 letters → Tab to expand full report templates.
+          </p>
+          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
+            <ArrowRight className="h-4 w-4 text-violet-600" />
           </div>
         </button>
       </div>
@@ -243,7 +290,7 @@ export function LandingPage({ onSelectMode }: LandingPageProps) {
         <div className="glass-card rounded-2xl p-6 border border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600">
+              <div className="h-12 w-12 rounded-full bg-purple-100 dark:bg-sky-900/30 flex items-center justify-center text-purple-500">
                 <Cloud className="h-6 w-6" />
               </div>
               <div>

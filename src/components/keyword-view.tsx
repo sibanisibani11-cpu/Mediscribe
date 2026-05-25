@@ -1,20 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Keyboard, BookOpen, ArrowLeft, Play, Minimize2, Cloud, RefreshCw, ChevronDown, CloudUpload, CloudDownload } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Keyboard, ArrowLeft, Play, Minimize2, Cloud, RefreshCw, ChevronDown, CloudUpload, CloudDownload, ShieldCheck, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { KeywordLibraryManager } from "@/components/keyword-library-manager";
 import { useToast } from "@/hooks/use-toast";
 import { SyncConfirmDialog } from "@/components/common/sync-confirm-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ToastAction } from "@/components/ui/toast";
 
 interface KeywordViewProps {
   isElectron: boolean;
   onBack: () => void;
   isListening?: boolean;
+  autoStart?: boolean;
+  onAutoStartHandled?: () => void;
 }
 
-export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
+export function KeywordView({ isElectron, onBack, autoStart = false, onAutoStartHandled }: KeywordViewProps) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDriveConnected, setIsDriveConnected] = useState(false);
 
@@ -24,7 +28,11 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
     open: false,
     action: "push"
   });
+  const [showPermissionDialog, setShowPermissionDialog] = useState(false);
+  const [isPermissionRequested, setIsPermissionRequested] = useState(false);
   const { toast } = useToast();
+  const accessibilityPromptKey = "mediscribe_accessibility_prompt_seen";
+  const autoStartConsumedRef = useRef(false);
 
   // Set typing mode to keyword on mount
   useEffect(() => {
@@ -42,10 +50,8 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
     }
 
     return () => {
-      if (isElectron && window.electron) {
-        (window.electron as any).stopKeyboardListener?.();
-        (window.electron as any).setRecordingState?.(false);
-      }
+      // Intentionally not stopping the listener on unmount 
+      // so it can seamlessly transition to Template mode or stay active in background
     }
   }, [isElectron]);
 
@@ -114,19 +120,47 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
     executeSync(strategy);
   };
 
-  const handleStart = async () => {
+  const doStartListener = async () => {
     if (isElectron && window.electron) {
       try {
-        await (window.electron as any).startKeywordListener?.();
+        const result = await (window.electron as any).startKeywordListener?.();
+        if (result && result.success === false) {
+          if (result.needsAccessibility) {
+            toast({
+              variant: "destructive",
+              title: "Permission Needed",
+              description: "Enable Accessibility for MediScribe under System Settings.",
+              action: (
+                <ToastAction
+                  altText="Open Settings"
+                  onClick={async () => {
+                    await (window.electron as any).openAccessibilitySettings?.();
+                    setIsPermissionRequested(true);
+                    setShowPermissionDialog(true);
+                  }}
+                >
+                  Open Settings
+                </ToastAction>
+              ),
+            });
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Keyword Mode could not start",
+              description: result.error || "An unknown error occurred.",
+            });
+          }
+          return;
+        }
         setIsListening(true);
-        (window.electron as any).setRecordingState?.(true); // Tell bubble to show "Pause"
+        (window.electron as any).setRecordingState?.(true);
+        await (window.electron as any).showFloatingButton?.();
 
         toast({
           title: "Keyword Mode Active",
-          description: "Type keywords (3+ characters) in Word to auto-expand. App minimized.",
+          description: "Type keywords (3+ characters) in any app to auto-expand.",
         });
 
-        // Minimize window after starting
         setTimeout(() => {
           (window.electron as any).minimizeWindow?.();
         }, 500);
@@ -135,6 +169,62 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
       }
     }
   };
+
+  const handleStart = async () => {
+    // Check if Accessibility permission is already granted — skip dialog if so
+    if (isElectron && (window.electron as any).checkAccessibilityPermission) {
+      const alreadyGranted = await (window.electron as any).checkAccessibilityPermission();
+      if (alreadyGranted) {
+        localStorage.setItem(accessibilityPromptKey, 'true');
+        await doStartListener();
+        return;
+      }
+    }
+    
+    // Permission not yet granted — show friendly explainer with deep link & "Continue" check
+    setIsPermissionRequested(false);
+    setShowPermissionDialog(true);
+  };
+
+  const handlePermissionConfirm = async () => {
+    if (!isPermissionRequested) {
+      setIsPermissionRequested(true);
+      // Trigger macOS default permission prompt (only pops up once if never allowed/denied)
+      await (window.electron as any).requestAccessibilityPermission?.();
+      // Directly open System Settings to Accessibility panel so user can turn on the switch
+      await (window.electron as any).openAccessibilitySettings?.();
+    } else {
+      // Users clicked "Continue" after we opened Settings for them
+      if (isElectron && (window.electron as any).checkAccessibilityPermission) {
+        const isGranted = await (window.electron as any).checkAccessibilityPermission();
+        if (isGranted) {
+          setShowPermissionDialog(false);
+          localStorage.setItem(accessibilityPromptKey, 'true');
+          toast({
+            title: "Access Granted!",
+            description: "Keyword Mode listener started successfully.",
+          });
+          await doStartListener();
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Permission Not Detected Yet",
+            description: "Make sure MediScribe is enabled in System Settings, then click Continue.",
+          });
+        }
+      } else {
+        setShowPermissionDialog(false);
+        await doStartListener();
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!autoStart || autoStartConsumedRef.current) return;
+    autoStartConsumedRef.current = true;
+    onAutoStartHandled?.();
+    handleStart();
+  }, [autoStart]);
 
   const handleStop = async () => {
     if (isElectron && window.electron) {
@@ -190,7 +280,7 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
           </Button>
           <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Keyboard className="h-5 w-5 text-blue-600" />
+            <Keyboard className="h-5 w-5 text-violet-600" />
             Keyword Library
           </h2>
         </div>
@@ -205,7 +295,7 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
                 setRefreshKey(prev => prev + 1);
                 toast({ description: "Data refreshed" });
               }}
-              className="h-8 w-8 p-0 text-slate-400 hover:text-blue-600 rounded-full bg-white dark:bg-slate-800 border border-slate-200/30 dark:border-slate-700/30 shadow-sm"
+              className="h-8 w-8 p-0 text-slate-400 hover:text-violet-600 rounded-full bg-white dark:bg-slate-800 border border-slate-200/30 dark:border-slate-700/30 shadow-sm"
               title="Refresh Data"
             >
               <RefreshCw className="h-4 w-4" />
@@ -218,7 +308,7 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
                     variant="outline"
                     size="sm"
                     disabled={isSyncing}
-                    className="h-8 px-3 text-[11px] font-bold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 flex items-center gap-2 rounded-lg shadow-sm"
+                    className="h-8 px-3 text-[11px] font-bold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-violet-50 dark:hover:bg-blue-900/20 text-violet-600 flex items-center gap-2 rounded-lg shadow-sm"
                   >
                     {isSyncing ? (
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -250,10 +340,10 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
 
                     <button
                       onClick={() => handleSync('pull')}
-                      className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 rounded-lg transition-colors text-left"
+                      className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-blue-900/20 hover:text-violet-600 rounded-lg transition-colors text-left"
                     >
                       <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                        <CloudDownload className="h-4 w-4 text-blue-600" />
+                        <CloudDownload className="h-4 w-4 text-violet-600" />
                       </div>
                       <div>
                         <div className="font-bold">Pull from Cloud</div>
@@ -274,7 +364,7 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
                 {isSyncing ? (
                   <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Cloud className="h-3.5 w-3.5 group-hover:text-blue-500 transition-colors" />
+                  <Cloud className="h-3.5 w-3.5 group-hover:text-violet-500 transition-colors" />
                 )}
                 {isSyncing ? "Connecting..." : "Connect Cloud"}
               </Button>
@@ -298,7 +388,7 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
       </div>
 
       <div className="glass-card rounded-xl p-4 flex-1 overflow-hidden flex flex-col">
-        <div className="mb-4 p-3 rounded-lg bg-blue-50/50 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50">
+        <div className="mb-4 p-3 rounded-lg bg-violet-50/50 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50">
           <p className="text-xs text-slate-700 dark:text-slate-300">
             💡 <strong>How it works:</strong> Click <strong>"Start & Minimize"</strong> to activate. Then type any keyword (3+ characters) directly in Microsoft Word, and it will automatically expand to its full text!
           </p>
@@ -313,6 +403,60 @@ export function KeywordView({ isElectron, onBack }: KeywordViewProps) {
         onConfirm={() => executeSync(confirmDialog.action)}
         action={confirmDialog.action}
       />
-    </div >
+
+      {/* Friendly Permission Explainer — shown BEFORE macOS Accessibility popup */}
+      <Dialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
+        <DialogContent className="max-w-sm rounded-2xl p-6 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-2xl">
+          <DialogHeader className="items-center text-center gap-3">
+            <div className="h-14 w-14 rounded-2xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mb-1">
+              <KeyRound className="h-7 w-7 text-violet-600 dark:text-violet-400" />
+            </div>
+            <DialogTitle className="text-lg font-black text-slate-900 dark:text-white">
+              Keyboard Detection Permission
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 dark:text-slate-400 text-center leading-relaxed">
+              MediScribe needs <strong className="text-slate-700 dark:text-slate-300">Accessibility Access</strong> to detect when you type a keyword shortcut in any app — so it can expand it instantly.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-3 flex flex-col gap-2.5">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                <strong>Your privacy is safe.</strong> MediScribe only detects keyword shortcut characters and never reads, records, or transmits anything you type.
+              </p>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">
+              {!isPermissionRequested ? (
+                <>
+                  Clicking <strong>"Open Settings"</strong> will guide you to macOS <em>Privacy &amp; Security → Accessibility</em>. Please turn on the switch next to <strong>MediScribe</strong>.
+                </>
+              ) : (
+                <span className="text-violet-600 dark:text-violet-400 font-bold block animate-pulse">
+                  System Settings opened! Toggle the switch for MediScribe, then click "Continue" below.
+                </span>
+              )}
+            </p>
+
+            <div className="flex gap-2 mt-1">
+              <Button
+                variant="outline"
+                className="flex-1 rounded-xl"
+                onClick={() => setShowPermissionDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 rounded-xl cobalt-gradient text-white font-bold"
+                onClick={handlePermissionConfirm}
+              >
+                {!isPermissionRequested ? "Open Settings" : "Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

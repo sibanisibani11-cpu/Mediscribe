@@ -13,6 +13,12 @@ const URLS = {
     linux: 'https://github.com/eugeneware/ffmpeg-static/releases/download/b5.0.1/linux-x64'
 };
 
+function removeDirSync(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+    }
+}
+
 async function bundleFFmpeg() {
     console.log('📦 Bundling FFmpeg for multiple platforms...');
 
@@ -34,11 +40,16 @@ async function bundleFFmpeg() {
         const url = URLS[platform];
         if (!url) continue;
 
-        console.log(`\n--- Bundling FFmpeg for ${platform} ---`);
-
         const binName = platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
         const outputPath = path.join(RESOURCES_DIR, binName);
 
+        // Skip if already exists and is a reasonable size (>10MB)
+        if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10 * 1024 * 1024) {
+            console.log(`✅ FFmpeg for ${platform} already exists, skipping download.`);
+            continue;
+        }
+
+        console.log(`\n--- Bundling FFmpeg for ${platform} ---`);
         console.log(`⬇️  Downloading FFmpeg for ${platform}...`);
         try {
             execSync(`curl -L -o "${outputPath}" "${url}"`, { stdio: 'inherit' });

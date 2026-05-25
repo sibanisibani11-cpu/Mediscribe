@@ -13,6 +13,12 @@ const URLS = {
     darwin: null
 };
 
+function removeDirSync(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        fs.rmSync(dirPath, { recursive: true, force: true });
+    }
+}
+
 async function bundleWhisper() {
     console.log('📦 Bundling Whisper Server...');
 
@@ -56,6 +62,18 @@ async function bundleWhisper() {
             continue;
         }
 
+        // Check if Windows binary already exists and validate it
+        // Note: whisper-server.exe is a thin loader (~700KB) — the heavy lifting is in the DLLs
+        if (platform === 'win32') {
+            const exePath = path.join(RESOURCES_DIR, 'whisper-server.exe');
+            if (fs.existsSync(exePath) && fs.statSync(exePath).size > 500000) {
+                console.log('\u2705 whisper-server.exe already exists and looks valid, skipping download.');
+                continue;
+            } else if (fs.existsSync(exePath)) {
+                console.log(`\u26a0\ufe0f  whisper-server.exe exists but is suspiciously small (${fs.statSync(exePath).size} bytes) - re-downloading.`);
+            }
+        }
+
         if (!fs.existsSync(TEMP_DIR)) {
             fs.mkdirSync(TEMP_DIR, { recursive: true });
         }
@@ -68,7 +86,7 @@ async function bundleWhisper() {
             execSync(`curl -L -o "${archivePath}" "${url}"`, { stdio: 'inherit' });
         } catch (e) {
             console.error(`❌ Download failed for ${platform}:`, e.message);
-            execSync(`rm -rf "${TEMP_DIR}"`);
+            removeDirSync(TEMP_DIR);
             continue;
         }
 
@@ -91,6 +109,17 @@ async function bundleWhisper() {
                         console.warn(`⚠️  Could not extract ${file}: ${err.message}`);
                     }
                 }
+
+                // Validate the downloaded binary size
+                const exePath = path.join(RESOURCES_DIR, 'whisper-server.exe');
+                if (fs.existsSync(exePath)) {
+                    const size = fs.statSync(exePath).size;
+                    console.log(`   whisper-server.exe size: ${(size / 1024).toFixed(0)} KB`);
+                    if (size < 200000) {
+                        console.warn('⚠️  whisper-server.exe seems too small - check the archive contents.');
+                        execSync(`unzip -l "${archivePath}"`, { stdio: 'inherit' });
+                    }
+                }
             } else if (platform === 'linux') {
                 // Linux: Extract whisper-server
                 try {
@@ -107,7 +136,7 @@ async function bundleWhisper() {
             console.error(`❌ Extraction failed for ${platform}:`, e.message);
         } finally {
             // Cleanup temp
-            execSync(`rm -rf "${TEMP_DIR}"`);
+            removeDirSync(TEMP_DIR);
         }
     }
 }

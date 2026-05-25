@@ -317,7 +317,7 @@ export function DictationView({ isElectron }: DictationViewProps) {
     <div className="flex flex-col gap-6 w-full max-w-sm animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="glass-card rounded-xl p-4 space-y-4">
         <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <Settings className="h-4 w-4 text-blue-600" />
+          <Settings className="h-4 w-4 text-violet-600" />
           Dictation Settings
         </h2>
 

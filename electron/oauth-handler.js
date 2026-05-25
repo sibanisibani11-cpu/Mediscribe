@@ -75,11 +75,14 @@ async function authenticateWithGoogle() {
           server.close();
 
           const { tokens } = await oauth2Client.getToken(code);
-          saveToken(tokens);
+          oauth2Client.setCredentials(tokens);
 
           // Fetch user email
           const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
           const userInfo = await oauth2.userinfo.get();
+
+          tokens.email = userInfo.data.email;
+          saveToken(tokens);
 
           resolved = true;
           resolve({ success: true, tokens, email: userInfo.data.email });

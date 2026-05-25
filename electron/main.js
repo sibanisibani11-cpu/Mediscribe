@@ -1,15 +1,110 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, dialog, shell, globalShortcut } = require('electron');
 console.log('\n\n' + 'X'.repeat(60));
-console.log('!!! CRITICAL: LOADING MAIN.JS VERSION 1.0.3-B !!!');
+console.log('!!! CRITICAL: LOADING MAIN.JS VERSION 1.0.4 !!!');
 console.log('X'.repeat(60) + '\n\n');
 const path = require('path');
 const { exec, spawn, execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
-const { uIOhook, UiohookKey } = require('uiohook-napi');
+
+// Safely load uiohook-napi - may fail on Windows if native bindings aren't built
+let uIOhook = null;
+let UiohookKey = {};
+try {
+    const uiohookModule = require('uiohook-napi');
+    uIOhook = uiohookModule.uIOhook;
+    UiohookKey = uiohookModule.UiohookKey;
+    console.log('[MediScribe] uiohook-napi loaded successfully');
+} catch (err) {
+    console.warn('[MediScribe] uiohook-napi failed to load (keyword listener will be disabled):', err.message);
+}
+
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const { authenticateWithGoogle, getToken, getDriveClient, logoutGoogle } = require('./oauth-handler');
+
+// ── Auto-Updater Setup ─────────────────────────────────────────────────────
+let autoUpdater = null;
+try {
+    autoUpdater = require('electron-updater').autoUpdater;
+    autoUpdater.logger = require('electron').app ? null : console;
+    autoUpdater.autoDownload = true;       // Download silently in background
+    autoUpdater.autoInstallOnAppQuit = true; // Install when user quits normally
+} catch (err) {
+    console.warn('[Updater] electron-updater not available:', err.message);
+}
+
+function setupAutoUpdater(win) {
+    if (!autoUpdater || !win) return;
+    if (isDev) {
+        console.log('[Updater] Skipping auto-update in dev mode.');
+        return;
+    }
+
+    autoUpdater.on('checking-for-update', () => {
+        console.log('[Updater] Checking for updates...');
+        win.webContents.send('update-status', { status: 'checking' });
+    });
+
+    autoUpdater.on('update-available', (info) => {
+        console.log(`[Updater] Update available: v${info.version}`);
+        win.webContents.send('update-status', { status: 'available', version: info.version });
+    });
+
+    autoUpdater.on('update-not-available', () => {
+        console.log('[Updater] App is up to date.');
+        win.webContents.send('update-status', { status: 'up-to-date' });
+    });
+
+    autoUpdater.on('download-progress', (progress) => {
+        const pct = Math.round(progress.percent);
+        console.log(`[Updater] Downloading... ${pct}%`);
+        win.webContents.send('update-status', { status: 'downloading', percent: pct });
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+        console.log(`[Updater] Update downloaded: v${info.version}`);
+        win.webContents.send('update-status', { status: 'downloaded', version: info.version });
+
+        // Show native dialog asking user to restart
+        dialog.showMessageBox(win, {
+            type: 'info',
+            title: 'MediScribe Update Ready',
+            message: `Version ${info.version} has been downloaded.`,
+            detail: 'Restart now to apply the update, or it will install automatically when you next quit the app.',
+            buttons: ['Restart Now', 'Later'],
+            defaultId: 0,
+            cancelId: 1,
+        }).then(({ response }) => {
+            if (response === 0) {
+                autoUpdater.quitAndInstall(false, true);
+            }
+        });
+    });
+
+    autoUpdater.on('error', (err) => {
+        console.error('[Updater] Error:', err.message);
+        win.webContents.send('update-status', { status: 'error', message: err.message });
+    });
+
+    // Check for updates 5 seconds after launch (silent background check)
+    setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => {
+            console.warn('[Updater] checkForUpdates failed:', err.message);
+        });
+    }, 5000);
+}
+
+ipcMain.handle('check-for-updates', () => {
+    if (!autoUpdater || isDev) return { status: 'dev-mode' };
+    autoUpdater.checkForUpdates().catch(console.error);
+    return { status: 'checking' };
+});
+
+ipcMain.handle('install-update', () => {
+    if (autoUpdater) autoUpdater.quitAndInstall(false, true);
+});
+
 
 ipcMain.handle('google-logout', async () => {
     return logoutGoogle();
@@ -153,7 +248,24 @@ async function checkDeviceLimit(email) {
     }
 }
 
+function getExpirationDate(data) {
+    if (data.expiresAt) return new Date(data.expiresAt);
+    const startDate = new Date(data.date || Date.now());
+    if (data.billing === 'yearly') {
+        startDate.setFullYear(startDate.getFullYear() + 1);
+    } else {
+        startDate.setMonth(startDate.getMonth() + 1);
+    }
+    return startDate;
+}
+
 function checkActivationStatus() {
+    // Check for lifetime build marker file
+    const lifetimeMarker = path.join(__dirname, 'lifetime.lock');
+    if (fs.existsSync(lifetimeMarker)) {
+        return true;
+    }
+
     try {
         if (!fs.existsSync(licensePath)) return false;
         const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
@@ -165,7 +277,12 @@ function checkActivationStatus() {
         // Also check if the email is present and valid
         if (!data.hwid || !data.code) return false;
 
-        return data.hwid === currentHwid && data.code === expectedCode;
+        if (data.hwid === currentHwid && data.code === expectedCode) {
+            const exp = getExpirationDate(data);
+            if (new Date() > exp) return false; // Expired
+            return true;
+        }
+        return false;
     } catch (e) {
         return false;
     }
@@ -236,7 +353,6 @@ let pendingKeyword = null; // Stores currently active expanded keyword
 let pendingMatches = [];   // Stores all matching keywords for the typed text
 let selectedMatchIndex = 0; // Index of the currently selected match
 
-
 let mainWindow;
 let floatingButton;
 let tray;
@@ -273,8 +389,32 @@ function saveKeywordLibrary() {
     } catch (e) {
         console.error('Failed to save keyword library:', e);
     }
+}
 
+// Template Library Management
+let templateLibraryPath;
+let templateFilesDir;
+let templateLibrary = [];
 
+function loadTemplateLibrary() {
+    try {
+        if (fs.existsSync(templateLibraryPath)) {
+            const data = fs.readFileSync(templateLibraryPath, 'utf8');
+            templateLibrary = JSON.parse(data);
+            safeLog(`[MediScribe] Loaded template library with ${templateLibrary.length} entries.`);
+        }
+    } catch (e) {
+        safeError('Failed to load template library:', e);
+        templateLibrary = [];
+    }
+}
+
+function saveTemplateLibrary() {
+    try {
+        fs.writeFileSync(templateLibraryPath, JSON.stringify(templateLibrary, null, 2));
+    } catch (e) {
+        console.error('Failed to save template library:', e);
+    }
 }
 
 function loadDictionary() {
@@ -428,6 +568,23 @@ function saveFloatingButtonPosition(x, y) {
     }
 }
 
+function getClampedFloatingButtonPosition(x, y) {
+    const { screen } = require('electron');
+    const point = {
+        x: Number.isFinite(x) ? x : 0,
+        y: Number.isFinite(y) ? y : 0,
+    };
+    const display = screen.getDisplayNearestPoint(point) || screen.getPrimaryDisplay();
+    const { x: left, y: top, width, height } = display.workArea;
+    const maxX = left + Math.max(0, width - 160);
+    const maxY = top + Math.max(0, height - 175);
+
+    return {
+        x: Math.min(Math.max(point.x, left), maxX),
+        y: Math.min(Math.max(point.y, top), maxY),
+    };
+}
+
 function createFloatingButton() {
     if (floatingButton) {
         if (!floatingButton.isDestroyed()) {
@@ -443,21 +600,28 @@ function createFloatingButton() {
     const { screen } = require('electron');
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
+    const { x: displayX, y: displayY } = primaryDisplay.workArea;
 
     // Load saved position or use default
     loadFloatingButtonPosition();
-    const x = floatingButtonPosition?.x ?? (width - 150);
-    const y = floatingButtonPosition?.y ?? (height - 150);
+    const defaultPosition = {
+        x: displayX + width - 170,
+        y: displayY + height - 185,
+    };
+    const { x, y } = getClampedFloatingButtonPosition(
+        floatingButtonPosition?.x ?? defaultPosition.x,
+        floatingButtonPosition?.y ?? defaultPosition.y
+    );
 
     floatingButton = new BrowserWindow({
-        width: 140,
-        height: 140,
+        width: 160,
+        height: 175,
         x: x,
         y: y,
         frame: false,
         transparent: true,
         alwaysOnTop: true,
-        visibleOnAllWorkspaces: true,
+        // visibleOnAllWorkspaces is macOS-only; setting it on Windows causes no-ops but we guard it below
         fullscreenable: false,
         skipTaskbar: true,
         resizable: false,
@@ -467,7 +631,7 @@ function createFloatingButton() {
         acceptFirstMouse: true,
         focusable: false, // Don't take focus, just accept clicks
         show: false, // Don't show until content is ready to prevent flickering
-        type: process.platform === 'darwin' ? 'panel' : 'none', // 'none' is often better for Win32 bubbles than 'toolbar'
+        type: process.platform === 'darwin' ? 'panel' : 'toolbar',
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
@@ -476,17 +640,24 @@ function createFloatingButton() {
 
     isCreatingFloatingButton = false;
 
-    // Set window level to screen-saver (highest level, typically used by system alerts/overlays)
-    // This ensures it appears on all workspaces including full-screen apps
-    floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
-    floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Set window level - use 'screen-saver' on macOS for always-on-top; 'pop-up-menu' works on Windows
+    if (process.platform === 'darwin') {
+        floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
+        floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+    } else {
+        floatingButton.setAlwaysOnTop(true, 'pop-up-menu', 1);
+    }
 
-    // Restored: Aggressively keep window on top using periodic check (The "Siri Trick" for Electron)
+    // Aggressively keep window on top using periodic check
     const keepOnTopInterval = setInterval(() => {
         if (floatingButton && !floatingButton.isDestroyed()) {
             floatingButton.moveTop();
-            floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
-            floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+            if (process.platform === 'darwin') {
+                floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
+                floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+            } else {
+                floatingButton.setAlwaysOnTop(true, 'pop-up-menu', 1);
+            }
         } else {
             clearInterval(keepOnTopInterval);
         }
@@ -498,8 +669,12 @@ function createFloatingButton() {
     // Consolidate all initialization logic in a SINGLE did-finish-load listener
     floatingButton.webContents.on('did-finish-load', () => {
         if (floatingButton && !floatingButton.isDestroyed()) {
-            floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
-            floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+            if (process.platform === 'darwin') {
+                floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
+                floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+            } else {
+                floatingButton.setAlwaysOnTop(true, 'pop-up-menu', 1);
+            }
             floatingButton.moveTop();
 
             if (isRecording) {
@@ -532,32 +707,39 @@ function createFloatingButton() {
             setTimeout(() => {
                 if (floatingButton && !floatingButton.isDestroyed()) {
                     floatingButton.moveTop();
-                    floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
-                    floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+                    if (process.platform === 'darwin') {
+                        floatingButton.setAlwaysOnTop(true, 'screen-saver', 1);
+                        floatingButton.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+                    } else {
+                        floatingButton.setAlwaysOnTop(true, 'pop-up-menu', 1);
+                    }
                 }
             }, 100);
         }
     });
 
-    // Initial state: not click-through
+    // Initial state: not click-through — reset explicitly on every creation
     floatingButton.setIgnoreMouseEvents(false);
-
-    // Add support for dynamic click-through
-    ipcMain.on('set-ignore-mouse-events', (event, ignore) => {
-        if (floatingButton && !floatingButton.isDestroyed()) {
-            // macOS requires 'forward: true' to pass events to windows below while still detecting hover
-            // Windows/Linux do not support 'forward: true' correctly in Electron, 
-            // so we disable the ignore logic there to prevent the bubble from becoming permanently unclickable.
-            if (process.platform === 'darwin') {
-                floatingButton.setIgnoreMouseEvents(ignore, { forward: true });
-            } else {
-                // On Windows/Linux, we don't ignore mouse events so the bubble remains Responsive.
-                // The transparency of the window allows clicks to pass through naturally on clear areas.
-                floatingButton.setIgnoreMouseEvents(false);
-            }
-        }
-    });
 }
+
+// ── Set-ignore-mouse-events IPC handler (registered ONCE, outside createFloatingButton)
+// Moving it outside prevents duplicate listener accumulation when the bubble is
+// destroyed and recreated (which would cause the bubble to become permanently unclickable).
+ipcMain.removeAllListeners('set-ignore-mouse-events');
+ipcMain.on('set-ignore-mouse-events', (event, ignore) => {
+    if (floatingButton && !floatingButton.isDestroyed()) {
+        // macOS requires 'forward: true' to pass events to windows below while still detecting hover
+        // Windows/Linux do not support 'forward: true' correctly in Electron,
+        // so we disable the ignore logic there to prevent the bubble from becoming permanently unclickable.
+        if (process.platform === 'darwin') {
+            floatingButton.setIgnoreMouseEvents(ignore, { forward: true });
+        } else {
+            // On Windows/Linux, we don't ignore mouse events so the bubble remains responsive.
+            // The transparency of the window allows clicks to pass through naturally on clear areas.
+            floatingButton.setIgnoreMouseEvents(false);
+        }
+    }
+});
 
 // Small dialog window for keyword expansion confirmation
 let keywordDialogWindow = null;
@@ -572,20 +754,41 @@ function createKeywordDialog(matches, selectedIndex = 0) {
 
     const { screen } = require('electron');
     const cursorPosition = screen.getCursorScreenPoint();
+    // Get the display where the cursor is currently located
+    const display = screen.getDisplayNearestPoint(cursorPosition);
+    const workArea = display.workArea;
 
     // Calculate window size based on number of matches
-    // Calculate window size based on number of matches
-    const width = 600; // Wider to show more text
+    const width = 600;
     const headerHeight = 60;
-    const itemHeight = 120; // Increased estimate for wrapped text
+    const itemHeight = 120;
     const footerHeight = 40;
     const height = Math.min(600, headerHeight + (matches.length * itemHeight) + footerHeight);
+
+    // Initial positioning
+    let x = cursorPosition.x + 15;
+    let y = cursorPosition.y + 15;
+
+    // Boundary Detection: Stay within the work area
+    // If it goes off the right edge, shift it to the left of the cursor
+    if (x + width > workArea.x + workArea.width) {
+        x = cursorPosition.x - width - 15;
+    }
+
+    // If it goes off the bottom edge, shift it above the cursor
+    if (y + height > workArea.y + workArea.height) {
+        y = cursorPosition.y - height - 15;
+    }
+
+    // Double check it's not going off the top or left now (very unlikely but good for safety)
+    x = Math.max(workArea.x + 5, x);
+    y = Math.max(workArea.y + 5, y);
 
     keywordDialogWindow = new BrowserWindow({
         width: width,
         height: height,
-        x: cursorPosition.x + 15,
-        y: cursorPosition.y + 15,
+        x: Math.round(x),
+        y: Math.round(y),
         frame: false,
         transparent: true,
         alwaysOnTop: true,
@@ -594,14 +797,19 @@ function createKeywordDialog(matches, selectedIndex = 0) {
         show: false,
         focusable: false,
         hasShadow: true,
+        type: process.platform === 'darwin' ? 'panel' : 'toolbar',
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
         },
     });
 
-    keywordDialogWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    keywordDialogWindow.setAlwaysOnTop(true, 'screen-saver');
+    if (process.platform === 'darwin') {
+        keywordDialogWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+        keywordDialogWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    } else {
+        keywordDialogWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
+    }
 
     const htmlContent = `
     <!DOCTYPE html>
@@ -788,6 +996,7 @@ function createKeywordDialog(matches, selectedIndex = 0) {
     keywordDialogWindow.once('ready-to-show', () => {
         if (keywordDialogWindow && !keywordDialogWindow.isDestroyed()) {
             keywordDialogWindow.showInactive();
+            keywordDialogWindow.moveTop();
         }
     });
 }
@@ -981,26 +1190,31 @@ function handleKeyboardEvent(e) {
             }
         }
 
-        // Handle Number Keys 1-9 for direct selection
-        if (e.keycode >= UiohookKey.Digit1 && e.keycode <= UiohookKey.Digit9) {
-            const index = e.keycode - UiohookKey.Digit1;
-            if (index < pendingMatches.length) {
-                selectedMatchIndex = index;
-                confirmKeywordExpansion(true);
-                return;
-            }
-        }
-
-        // Confirm expansion (Enter always confirms, Tab confirms if only 1 match)
-        if (isEnter || (isTab && pendingMatches.length === 1)) {
+    // Handle Number Keys 1-9 for direct selection
+    if (e.keycode >= UiohookKey.Digit1 && e.keycode <= UiohookKey.Digit9) {
+        const index = e.keycode - UiohookKey.Digit1;
+        if (index < pendingMatches.length) {
+            selectedMatchIndex = index;
             confirmKeywordExpansion(true);
             return;
         }
+    }
 
-        // Any other non-character key while dialog is open should probably close it
-        if (!isTab && !isEnter && !isDown && !isUp && !isSpace && !keycodeToChar(e.keycode, e.shiftKey)) {
-            cancelKeywordExpansion();
-        }
+    const isEnterKey = e.keycode === 28;
+    const isSpaceKey = e.keycode === UiohookKey.Space || e.keycode === 57;
+    const isTabKey = e.keycode === 15;
+    const isSpaceConfirm = isSpaceKey && currentTypingMode !== 'template';
+
+    // Confirm expansion (Enter always confirms, Tab confirms if only 1 match, Space confirms if only 1 match in keyword mode)
+    if (isEnterKey || (isTabKey && pendingMatches.length === 1) || (isSpaceConfirm && pendingMatches.length === 1)) {
+        confirmKeywordExpansion(true);
+        return;
+    }
+
+    // Any other non-character key while dialog is open should probably close it
+    if (!isTabKey && !isEnterKey && !isDown && !isUp && !isSpaceKey && !keycodeToChar(e.keycode, e.shiftKey)) {
+        cancelKeywordExpansion();
+    }
     }
 
     // Handle Escape (1) to cancel pending keyword
@@ -1030,11 +1244,13 @@ function handleKeyboardEvent(e) {
     }
 
     // Handle Trigger Keys (Space, Tab, Enter) when dialog is NOT open
+    // Note: Space is ONLY a trigger key in keyword mode, NOT in template mode (since template names contain spaces).
     const isSpace = e.keycode === UiohookKey.Space || e.keycode === 57;
+    const isSpaceTrigger = isSpace && currentTypingMode !== 'template';
     const isTab = e.keycode === 15;
     const isEnter = e.keycode === 28;
 
-    if (isSpace || isTab || isEnter) {
+    if (isSpaceTrigger || isTab || isEnter) {
         if (typedBuffer.length >= 2) {
             // Check for keyword match on trigger
             checkAndShowKeyword(typedBuffer.toLowerCase(), true).catch(err => {
@@ -1073,18 +1289,51 @@ function handleKeyboardEvent(e) {
     }
 }
 
+
 // Keyboard listener for automatic keyword expansion in any application
+let uiohookIsRunning = false;
+
+function isAccessibilityTrusted(prompt = false) {
+    if (process.platform !== 'darwin') return true;
+    try {
+        const { systemPreferences } = require('electron');
+        return systemPreferences.isTrustedAccessibilityClient(prompt);
+    } catch (error) {
+        safeError('[MediScribe] Accessibility permission check failed:', error);
+        return false;
+    }
+}
+
 function startKeyboardListener() {
     if (keyboardListenerActive) {
         try {
             if (process.stdout.writable) console.log('[MediScribe] Keyboard listener already active - ignoring start request');
         } catch (err) { }
-        return;
+        return { success: true, alreadyActive: true };
     }
 
     try {
         if (process.stdout.writable) console.log('[MediScribe] Starting keyboard listener for automatic keyword expansion');
     } catch (err) { }
+
+    if (!isAccessibilityTrusted(false)) {
+        const message = 'Accessibility permission is required before Keyword or Template expansion can start.';
+        safeError(`[MediScribe] ${message}`);
+        isRecording = false;
+        keyboardListenerActive = false;
+        updateTrayMenu();
+        if (floatingButton && !floatingButton.isDestroyed()) {
+            floatingButton.webContents.send('rec-state-change', false);
+        }
+        return { success: false, error: message, needsAccessibility: true };
+    }
+
+    // Test if uIOhook is available before marking the listener active.
+    if (!uIOhook) {
+        const message = 'Keyboard listener is unavailable because uiohook-napi failed to load.';
+        safeError(`[MediScribe] ${message}`);
+        return { success: false, error: message };
+    }
 
     // Reload keyword library to ensure it's up to date
     loadKeywordLibrary();
@@ -1092,60 +1341,50 @@ function startKeyboardListener() {
     try {
         if (process.stdout.writable) {
             console.log('[MediScribe] Keyword library size:', keywordLibrary.length);
-            console.log('[MediScribe] Keywords:', keywordLibrary.map(k => k.keyword).join(', '));
         }
     } catch (err) { }
+    typedBuffer = '';
+
+    // Only start uiohook once — avoid start/stop cycling that causes native SIGABRT crash
+    if (!uiohookIsRunning) {
+        uIOhook.removeAllListeners('keydown');
+        uIOhook.on('keydown', handleKeyboardEvent);
+
+        try {
+            uIOhook.start();
+            uiohookIsRunning = true;
+            try {
+                if (process.stdout.writable) console.log('[MediScribe] uIOhook started successfully');
+            } catch (err) { }
+        } catch (error) {
+            try {
+                if (process.stderr.writable) console.error('[MediScribe] Failed to start uIOhook:', error);
+            } catch (err) { }
+            keyboardListenerActive = false;
+            isRecording = false;
+            updateTrayMenu();
+            if (floatingButton && !floatingButton.isDestroyed()) {
+                floatingButton.webContents.send('rec-state-change', false);
+            }
+            return { success: false, error: error.message };
+        }
+    }
+
     keyboardListenerActive = true;
     isRecording = true; // Sync with global recording state for bubble/tray
     updateTrayMenu();
     if (floatingButton && !floatingButton.isDestroyed()) {
         floatingButton.webContents.send('rec-state-change', true);
     }
-    typedBuffer = '';
-
-    // Test if uIOhook is available
-    if (!uIOhook) {
-        try {
-            if (process.stderr.writable) console.error('[MediScribe] uIOhook is not available!');
-        } catch (err) { }
-        return;
-    }
-
-    // Only add listener if we haven't already OR if we want to ensure fresh start
-    // Best practice: remove any existing listeners first
-    uIOhook.removeAllListeners('keydown');
-
-    try {
-        if (process.stdout.writable) console.log('[MediScribe] Setting up keydown listener...');
-    } catch (err) { }
-
-    uIOhook.on('keydown', handleKeyboardEvent);
-
-    try {
-        uIOhook.start();
-        try {
-            if (process.stdout.writable) console.log('[MediScribe] uIOhook started successfully');
-        } catch (err) { }
-    } catch (error) {
-        try {
-            if (process.stderr.writable) console.error('[MediScribe] Failed to start uIOhook:', error);
-        } catch (err) { }
-        // Attempt to clean up if start fails
-        keyboardListenerActive = false;
-        isRecording = false;
-        updateTrayMenu();
-        if (floatingButton && !floatingButton.isDestroyed()) {
-            floatingButton.webContents.send('rec-state-change', false);
-        }
-        uIOhook.removeAllListeners('keydown');
-    }
+    return { success: true };
 }
+
 
 function stopKeyboardListener() {
     if (!keyboardListenerActive) return;
 
     try {
-        if (process.stdout.writable) console.log('[MediScribe] Stopping keyboard listener');
+        if (process.stdout.writable) console.log('[MediScribe] Stopping keyboard listener (logically)');
     } catch (err) { }
     keyboardListenerActive = false;
     isRecording = false;
@@ -1154,14 +1393,7 @@ function stopKeyboardListener() {
         floatingButton.webContents.send('rec-state-change', false);
     }
     typedBuffer = '';
-
-    try {
-        uIOhook.stop();
-    } catch (error) {
-        try {
-            if (process.stderr.writable) console.error('[MediScribe] Error stopping keyboard listener:', error);
-        } catch (err) { }
-    }
+    // Note: Intentionally NOT calling uIOhook.stop() to prevent native worker crash in Electron 39.
 }
 
 async function checkAndShowKeyword(text, isTrigger = false) {
@@ -1170,6 +1402,30 @@ async function checkAndShowKeyword(text, isTrigger = false) {
         pendingKeyword = null;
         pendingMatches = [];
         return false;
+    }
+
+    // In template mode, match against template names instead of keyword shortcuts
+    if (currentTypingMode === 'template') {
+        if (text.length < 3) return false;
+        const tplMatches = templateLibrary
+            .filter(t => t.name.toLowerCase().startsWith(text))
+            .map(t => ({ id: t.id, keyword: t.name.toLowerCase(), description: t.content || '', filePath: t.filePath, type: t.type || 'text' }));
+        const exactTpl = tplMatches.filter(t => t.keyword === text);
+        const sourceMatches = exactTpl.length > 0 ? exactTpl : tplMatches;
+        if (sourceMatches.length === 0) { hideKeywordDialog(); pendingKeyword = null; pendingMatches = []; return false; }
+        if (isTrigger) {
+            pendingMatches = sourceMatches;
+            selectedMatchIndex = 0;
+            pendingKeyword = { text, ...sourceMatches[0] };
+            if (sourceMatches.length === 1) { confirmKeywordExpansion(true); } else { createKeywordDialog(sourceMatches, 0); }
+            return true;
+        } else {
+            pendingMatches = sourceMatches;
+            selectedMatchIndex = 0;
+            pendingKeyword = { text, ...sourceMatches[0] };
+            createKeywordDialog(sourceMatches, 0);
+            return true;
+        }
     }
 
     // Find ALL matches (prefix match)
@@ -1260,10 +1516,13 @@ async function confirmKeywordExpansion(isTrigger = false) {
     const keywordData = {
         text: pendingKeyword.text,
         keyword: selectedMatch.keyword,
-        description: selectedMatch.description
+        description: selectedMatch.description,
+        filePath: selectedMatch.filePath,
+        type: selectedMatch.type
     };
 
-    safeLog(`[MediScribe] Confirming expansion: "${keywordData.text}" -> "${keywordData.description}"`);
+    const actionLabel = keywordData.type === 'file' ? `open file: ${keywordData.filePath}` : `type: "${keywordData.description}"`;
+    safeLog(`[MediScribe] Confirming expansion: "${keywordData.text}" -> ${actionLabel}`);
 
     // Hide the dialog and clear pending state immediately
     hideKeywordDialog();
@@ -1285,14 +1544,21 @@ async function confirmKeywordExpansion(isTrigger = false) {
     // Minor delay before typing
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Type the expansion to the active application
-    // Type the expansion to the active application
-    await typeText(keywordData.description);
+    // File template: open the file in its default app
+    if (keywordData.type === 'file' && keywordData.filePath) {
+        const { shell } = require('electron');
+        shell.openPath(keywordData.filePath).catch(err => {
+            safeError('[MediScribe] Failed to open template file:', err);
+        });
+    } else {
+        // Text keyword/template expansions should go into the app that is already
+        // receiving the user's keystrokes, not a possibly stale dictation target.
+        await pasteTextIntoActiveApp(keywordData.description);
+    }
 
     // Allow keyboard events again after a short delay
     setTimeout(() => {
         isExpanding = false;
-        // Clear buffer to prevent immediate re-triggering
         typedBuffer = '';
     }, 100);
 }
@@ -1311,10 +1577,11 @@ function cancelKeywordExpansion() {
 
 async function deleteCharacters(count) {
     if (process.platform === 'darwin') {
-        // macOS: Use AppleScript to send backspace keys
+        // macOS: Use AppleScript to send backspace keys directly to System Events (frontmost application)
+        // Redundant targetAppName activation is avoided here because the user is actively typing in the frontmost app.
         const script = `tell application "System Events" to repeat ${count} times\n    key code 51\nend repeat`;
         return new Promise((resolve) => {
-            exec(`osascript -e '${script}'`, (error) => {
+            exec(`osascript -e '${script.replace(/'/g, "'\\''")}'`, (error) => {
                 if (error) safeError('[MediScribe] Delete error:', error);
                 resolve();
             });
@@ -1339,14 +1606,92 @@ async function deleteCharacters(count) {
             });
         });
     } else {
-        // Linux: Use xdotool to send backspace keys
+        // Linux: Use xdotool to send backspace keys efficiently
         return new Promise((resolve) => {
-            const commands = Array(count).fill('key BackSpace').join(' && ');
-            exec(`xdotool ${commands}`, (error) => {
+            exec(`xdotool key --repeat ${count} --delay 20 BackSpace`, (error) => {
                 if (error) safeError('[MediScribe] Delete error:', error);
                 resolve();
             });
         });
+    }
+}
+
+async function pasteTextIntoActiveApp(text) {
+    if (!text) return { success: false, error: 'No text provided' };
+
+    const { clipboard } = require('electron');
+    const previousClipboardText = clipboard.readText();
+
+    try {
+        clipboard.writeText(text);
+
+        if (process.platform === 'darwin') {
+            // macOS: Use AppleScript to send Cmd+V directly to System Events (frontmost application)
+            // Redundant targetAppName activation is avoided here because the user is actively typing in the frontmost app.
+            const script = `
+                tell application "System Events"
+                    keystroke "v" using command down
+                end tell
+            `;
+
+            return await new Promise((resolve) => {
+                exec(`osascript -e '${script.replace(/'/g, "'\\''")}'`, (error) => {
+                    if (error) {
+                        safeError('[MediScribe] Paste expansion error:', error);
+                        resolve({ success: false, error: error.message });
+                    } else {
+                        resolve({ success: true });
+                    }
+                });
+            });
+        }
+
+        if (process.platform === 'win32') {
+            const { spawn } = require('child_process');
+            const script = `
+                Add-Type -AssemblyName System.Windows.Forms
+                Start-Sleep -Milliseconds 80
+                [System.Windows.Forms.SendKeys]::SendWait("^v")
+            `;
+
+            return await new Promise((resolve) => {
+                const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
+                let stderr = '';
+                ps.stderr.on('data', (data) => { stderr += data.toString(); });
+                ps.on('close', (code) => {
+                    if (code !== 0 || stderr) {
+                        safeError('[MediScribe] Paste expansion PowerShell error:', stderr);
+                        resolve({ success: false, error: stderr || `Exit code: ${code}` });
+                    } else {
+                        resolve({ success: true });
+                    }
+                });
+                ps.on('error', (error) => {
+                    safeError('[MediScribe] Paste expansion PowerShell spawn error:', error);
+                    resolve({ success: false, error: error.message });
+                });
+            });
+        }
+
+        const escapedText = text.replace(/'/g, "'\"'\"'");
+        return await new Promise((resolve) => {
+            exec(`printf '%s' '${escapedText}' | xclip -selection clipboard && xdotool key ctrl+v`, (error) => {
+                if (error) {
+                    safeError('[MediScribe] Paste expansion error:', error);
+                    resolve({ success: false, error: error.message });
+                } else {
+                    resolve({ success: true });
+                }
+            });
+        });
+    } finally {
+        setTimeout(() => {
+            try {
+                clipboard.writeText(previousClipboardText || '');
+            } catch (error) {
+                safeError('[MediScribe] Failed to restore clipboard after expansion:', error);
+            }
+        }, 500);
     }
 }
 
@@ -1446,10 +1791,18 @@ end tell`;
             ps.on('error', () => resolve(null));
         });
     } else {
-        // Linux fallback (basic)
-        return Promise.resolve(null);
+        // Linux: Use xdotool to get active window title
+        return new Promise((resolve) => {
+            exec('xdotool getactivewindow getwindowname', (error, stdout) => {
+                if (error) {
+                    resolve(null);
+                } else {
+                    const title = stdout.trim();
+                    resolve(title || null);
+                }
+            });
+        });
     }
-    return null;
 }
 
 // Helper to type text into any application
@@ -1511,8 +1864,20 @@ async function typeText(text, restoreWindow = false) {
             // Windows: Use PowerShell SendKeys with better timing and error handling
             const { spawn } = require('child_process');
 
-            let sendKeysText = text.replace(/[{]/g, '{{}').replace(/[}]/g, '{}}').replace(/[+]/g, '{+}').replace(/[\^]/g, '{^}').replace(/[%]/g, '{%}').replace(/[~]/g, '{~}').replace(/[(]/g, '{(}').replace(/[)]/g, '{)}').replace(/[\[]/g, '{[}').replace(/[\]]/g, '{]}');
-            const escapedText = sendKeysText.replace(/'/g, "''").replace(/\n/g, '{ENTER}');
+            // Escape all SendKeys special characters: +, ^, %, ~, (, ), [, ], {, }
+            let sendKeysText = text
+                .replace(/[{]/g, '{{}')
+                .replace(/[}]/g, '{}}')
+                .replace(/[+]/g, '{+}')
+                .replace(/[\^]/g, '{^}')
+                .replace(/[%]/g, '{%}')
+                .replace(/[~]/g, '{~}')
+                .replace(/[(]/g, '{(}')
+                .replace(/[)]/g, '{)}')
+                .replace(/[\[]/g, '{[}')
+                .replace(/[\]]/g, '{]}');
+            // Escape single quotes for PowerShell string literals, and map newlines
+            const escapedText = sendKeysText.replace(/'/g, "''").replace(/\r?\n/g, '{ENTER}');
 
             let activateScript = '';
             if (targetAppName) {
@@ -1553,9 +1918,13 @@ async function typeText(text, restoreWindow = false) {
                 });
             });
         } else {
+            // Linux: Use xdotool type with a small delay for reliability
             const escapedText = text.replace(/'/g, "'\"'\"'");
             return new Promise((resolve) => {
-                exec(`xdotool type '${escapedText}'`, (error) => {
+                exec(`xdotool type --delay 10 '${escapedText}'`, (error) => {
+                    if (mainWindow && restoreWindow) {
+                        setTimeout(() => mainWindow.showInactive(), 300);
+                    }
                     if (error) resolve({ success: false, error: error.message });
                     else resolve({ success: true });
                 });
@@ -1578,10 +1947,11 @@ function keycodeToChar(keycode, shiftKey) {
         [UiohookKey.Q]: 'q', [UiohookKey.R]: 'r', [UiohookKey.S]: 's', [UiohookKey.T]: 't',
         [UiohookKey.U]: 'u', [UiohookKey.V]: 'v', [UiohookKey.W]: 'w', [UiohookKey.X]: 'x',
         [UiohookKey.Y]: 'y', [UiohookKey.Z]: 'z',
-        [UiohookKey.Digit0]: '0', [UiohookKey.Digit1]: '1', [UiohookKey.Digit2]: '2',
-        [UiohookKey.Digit3]: '3', [UiohookKey.Digit4]: '4', [UiohookKey.Digit5]: '5',
-        [UiohookKey.Digit6]: '6', [UiohookKey.Digit7]: '7', [UiohookKey.Digit8]: '8',
-        [UiohookKey.Digit9]: '9',
+        [UiohookKey["0"]]: '0', [UiohookKey["1"]]: '1', [UiohookKey["2"]]: '2',
+        [UiohookKey["3"]]: '3', [UiohookKey["4"]]: '4', [UiohookKey["5"]]: '5',
+        [UiohookKey["6"]]: '6', [UiohookKey["7"]]: '7', [UiohookKey["8"]]: '8',
+        [UiohookKey["9"]]: '9',
+        [UiohookKey.Space]: ' ',
     };
 
     const char = keyMap[keycode];
@@ -1592,6 +1962,19 @@ function keycodeToChar(keycode, shiftKey) {
     return null;
 }
 
+// Helper: resolve the correct icon for the current platform
+function getAppIcon() {
+    if (process.platform === 'win32') {
+        // Prefer .ico for Windows (proper multi-size icon)
+        const icoPath = path.join(__dirname, '../build/icon.ico');
+        if (fs.existsSync(icoPath)) return icoPath;
+    }
+    // Fall back to PNG (works on macOS and Linux)
+    const pngInBuild = path.join(__dirname, '../build/icon.png');
+    if (fs.existsSync(pngInBuild)) return pngInBuild;
+    return path.join(__dirname, '../public/icon.png');
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 350,
@@ -1599,7 +1982,8 @@ function createWindow() {
         minWidth: 300,
         minHeight: 450,
         show: false,
-        icon: path.join(__dirname, '../icon.png'),
+        backgroundColor: '#fdfcfd',  // matches light theme bg — prevents white flash
+        icon: getAppIcon(),
         titleBarStyle: 'default',
         frame: true,
         transparent: false,
@@ -1609,7 +1993,7 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.js'),
-            webSecurity: !isDev,
+            webSecurity: false,  // Must be false for file:// to load cross-origin resources
             allowRunningInsecureContent: false,
         },
     });
@@ -1641,14 +2025,53 @@ function createWindow() {
     }
 
     mainWindow.once('ready-to-show', () => {
-        mainWindow.webContents.session.clearCache().then(() => {
-            console.log('[MediScribe] Main window cache cleared');
-            mainWindow.show();
-            // AUDIBLE STARTUP CONFIRMATION
-            require('electron').shell.beep();
-        });
-
+        console.log('[MediScribe] Main window ready-to-show');
+        mainWindow.show();
         if (isDev) {
+            mainWindow.webContents.openDevTools();
+        }
+    });
+
+    // Inject light-mode class immediately when DOM is ready — before React hydrates
+    // This ensures body background is always solid (never transparent/wallpaper)
+    mainWindow.webContents.on('dom-ready', () => {
+        const savedTheme = 'light'; // default
+        mainWindow.webContents.executeJavaScript(`
+            (function() {
+                // Apply stored theme or default light — prevents flash of transparency
+                var stored = localStorage.getItem('theme');
+                var theme = (stored === 'dark') ? 'dark' : 'light';
+                document.documentElement.classList.remove('light', 'dark');
+                document.documentElement.classList.add(theme);
+                document.documentElement.style.backgroundColor = (theme === 'dark') ? '#05020a' : '#fdfcfd';
+                document.body.style.backgroundColor = (theme === 'dark') ? '#05020a' : '#fdfcfd';
+                console.log('[MediScribe] Theme class applied before hydration:', theme);
+            })();
+        `).catch(() => {});
+    });
+
+    // Fallback: show window after page finishes loading in case ready-to-show misfires
+    mainWindow.webContents.once('did-finish-load', () => {
+        console.log('[MediScribe] did-finish-load fired');
+        if (!mainWindow.isVisible()) {
+            console.log('[MediScribe] Window not yet visible — showing via did-finish-load fallback');
+            mainWindow.show();
+        }
+    });
+
+    // Safety net: ensure window shows after 5 seconds no matter what
+    setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+            console.log('[MediScribe] Safety timeout: forcing window show');
+            mainWindow.show();
+        }
+    }, 5000);
+
+    // Allow Cmd+Option+I / F12 to open DevTools in any mode (for debugging packaged builds)
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        const isMacDevTools = input.meta && input.alt && input.key === 'i';
+        const isF12 = input.key === 'F12';
+        if (isMacDevTools || isF12) {
             mainWindow.webContents.openDevTools();
         }
     });
@@ -1754,7 +2177,12 @@ function createWindow() {
         // Create/Show floating button on minimize
         createFloatingButton();
 
-        if (process.platform === 'darwin') return;
+        if (process.platform === 'darwin') {
+            // On macOS, if you want it to "disappear" from the Dock but stay active in Tray,
+            // we'd use app.dock.hide(), but we keep it here to avoid user confusion.
+            // Just let it minimize as standard.
+            return;
+        }
         event.preventDefault();
         mainWindow.hide();
     });
@@ -1782,6 +2210,7 @@ function updateTrayMenu() {
         {
             label: 'Show MediScribe',
             click: () => {
+                if (mainWindow.isMinimized()) mainWindow.restore();
                 mainWindow.show();
                 mainWindow.focus();
             }
@@ -1789,6 +2218,7 @@ function updateTrayMenu() {
         {
             label: 'Start Recording',
             click: () => {
+                if (mainWindow.isMinimized()) mainWindow.restore();
                 mainWindow.show();
                 mainWindow.webContents.send('start-recording');
             },
@@ -1871,7 +2301,16 @@ function updateTrayMenu() {
 }
 
 function createTray() {
-    tray = new Tray(path.join(__dirname, '../icon.png'));
+    const iconPath = getAppIcon();
+    const nativeImage = require('electron').nativeImage;
+    const trayIcon = nativeImage.createFromPath(iconPath);
+
+    // Make icon a "Template" on Mac for Dark/Light mode support
+    if (process.platform === 'darwin') {
+        trayIcon.setTemplateImage(true);
+    }
+
+    tray = new Tray(trayIcon);
     tray.setToolTip('MediScribe - Medical Transcription');
 
     updateTrayMenu();
@@ -2153,6 +2592,9 @@ let autoSyncEnabled = false; // Always false now
 app.whenReady().then(() => {
     // Explicitly initialize quitting flag
     app.isQuitting = false;
+    if (process.platform === 'darwin' && app.dock) {
+        app.dock.show();
+    }
 
     // Load auto-sync setting
     try {
@@ -2173,6 +2615,13 @@ app.whenReady().then(() => {
     // Initialize keyword library path
     keywordLibraryPath = path.join(app.getPath('userData'), 'user-keywords.json');
     loadKeywordLibrary();
+
+    // Initialize template library path
+    templateLibraryPath = path.join(app.getPath('userData'), 'user-templates.json');
+    // Initialize template files storage directory
+    templateFilesDir = path.join(app.getPath('userData'), 'template-files');
+    if (!fs.existsSync(templateFilesDir)) fs.mkdirSync(templateFilesDir, { recursive: true });
+    loadTemplateLibrary();
 
     // Initialize nspell spell checker with loaded dictionaries
     console.log('[MediScribe] Initializing spell checker...');
@@ -2238,34 +2687,21 @@ app.whenReady().then(() => {
     // Register dictionary IPCs immediately BEFORE window creation
     console.log('[MediScribe] Registering Dictionary & Keyword IPC handlers...');
 
-    ipcMain.handle('check-for-updates', async () => {
-        return new Promise((resolve) => {
-            const https = require('https');
-            https.get(`https://mediapp.store/api/v1/update/check?app=MediScribe&version=${app.getVersion()}`, (res) => {
-                let data = '';
-                res.on('data', d => data += d);
-                res.on('end', () => {
-                    try {
-                        const result = JSON.parse(data);
-                        resolve({
-                            success: true,
-                            latestVersion: result.version,
-                            currentVersion: app.getVersion(),
-                            isUpdateAvailable: result.version && result.version !== app.getVersion(),
-                            url: result.url,
-                            notes: result.notes
-                        });
-                    } catch (e) {
-                        resolve({ success: false, error: 'Invalid response' });
-                    }
-                });
-            }).on('error', (e) => resolve({ success: false, error: e.message }));
-        });
-    });
 
     ipcMain.handle('get-google-status', async () => {
         const token = getToken('google');
-        return { connected: !!token };
+        let userEmail = null;
+        if (token) {
+            if (token.email) {
+                userEmail = token.email;
+            } else if (token.id_token) {
+                try {
+                    const payload = JSON.parse(Buffer.from(token.id_token.split('.')[1], 'base64').toString('utf-8'));
+                    userEmail = payload.email || null;
+                } catch(e) {}
+            }
+        }
+        return { connected: !!token, userEmail };
     });
 
     ipcMain.handle('google-login', async () => {
@@ -2315,8 +2751,43 @@ app.whenReady().then(() => {
         return hwid.substring(0, 8).toUpperCase();
     });
 
+    ipcMain.handle('check-accessibility-permission', () => {
+        return isAccessibilityTrusted(false);
+    });
+
+    ipcMain.handle('request-accessibility-permission', () => {
+        return isAccessibilityTrusted(true);
+    });
+
+    ipcMain.handle('open-accessibility-settings', async () => {
+        try {
+            const { shell } = require('electron');
+            await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+            return true;
+        } catch (error) {
+            safeError('[MediScribe] Failed to open accessibility settings:', error);
+            return false;
+        }
+    });
+
     ipcMain.handle('check-activation', () => {
         return checkActivationStatus();
+    });
+
+    ipcMain.handle('get-license-details', () => {
+        try {
+            if (!fs.existsSync(licensePath)) return null;
+            const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+            const currentHwid = getMachineId();
+            const expectedCode = generateActivationCode(currentHwid);
+            if (data.hwid === currentHwid && data.code === expectedCode) {
+                if (!data.expiresAt) {
+                    data.expiresAt = getExpirationDate(data).toISOString();
+                }
+                return data;
+            }
+        } catch (e) {}
+        return null;
     });
 
     ipcMain.handle('activate-app', (event, code) => {
@@ -2332,6 +2803,122 @@ app.whenReady().then(() => {
             return { success: true };
         }
         return { success: false, error: 'Invalid Activation Key for this machine.' };
+    });
+
+    ipcMain.handle('activate-after-payment', async (event, paymentData) => {
+        console.log('[Licensing] activate-after-payment called with:', paymentData);
+        const { payment_id, plan_id, billing, currency, amount, activation_id } = paymentData || {};
+        
+        if (!payment_id) {
+            return { success: false, error: 'No payment ID provided.' };
+        }
+
+        console.log(`[Licensing] Activating after Razorpay payment: ${payment_id}`);
+
+        const razorpayKeyId = process.env.RAZORPAY_KEY_ID || '';
+        const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
+
+        // Verify payment with Razorpay API (if secret key is configured)
+        if (razorpayKeyId && razorpayKeySecret && !razorpayKeySecret.includes('PASTE_YOUR')) {
+            try {
+                const https = require('https');
+                const credentials = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+
+                const verified = await new Promise((resolve) => {
+                    const req = https.get(
+                        `https://api.razorpay.com/v1/payments/${payment_id}`,
+                        {
+                            headers: {
+                                Authorization: `Basic ${credentials}`,
+                            },
+                        },
+                        (res) => {
+                            let data = '';
+                            res.on('data', (chunk) => { data += chunk; });
+                            res.on('end', () => {
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    console.log(`[Licensing] Razorpay payment status: ${parsed.status}, amount: ${parsed.amount}`);
+                                    // Accept captured or authorized payments
+                                    resolve(parsed.status === 'captured' || parsed.status === 'authorized');
+                                } catch (e) {
+                                    console.error('[Licensing] Failed to parse Razorpay API response:', e);
+                                    resolve(false);
+                                }
+                            });
+                        }
+                    );
+                    req.on('error', (err) => {
+                        console.error('[Licensing] Razorpay API request failed:', err.message);
+                        resolve(false);
+                    });
+                    req.setTimeout(10000, () => {
+                        req.destroy();
+                        resolve(false);
+                    });
+                });
+
+                if (!verified) {
+                    console.warn('[Licensing] Payment verification failed — Razorpay API returned non-captured status.');
+                    return {
+                        success: false,
+                        error: `Payment could not be verified. If payment was deducted, please contact support@mediapp.store with Transaction ID: ${payment_id}`,
+                    };
+                }
+
+                console.log('[Licensing] Payment verified with Razorpay API ✅');
+            } catch (err) {
+                console.error('[Licensing] Error verifying payment:', err);
+                // Don't fail activation on network error — log and proceed
+                console.warn('[Licensing] Proceeding with activation despite verification error (network issue).');
+            }
+        } else {
+            // No secret key configured — log and proceed (trust Razorpay client-side callback)
+            console.warn('[Licensing] RAZORPAY_KEY_SECRET not configured. Skipping server-side verification. Add it to .env for production security.');
+        }
+
+        // Write license file
+        try {
+            const currentHwid = getMachineId();
+            const licenseCode = generateActivationCode(currentHwid);
+
+            let newExpiration = new Date();
+            if (fs.existsSync(licensePath)) {
+                try {
+                   const oldData = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+                   const oldExp = getExpirationDate(oldData);
+                   // Only stack expiration if it hasn't expired yet
+                   if (oldExp > new Date()) {
+                       newExpiration = new Date(oldExp);
+                   }
+                } catch(e) {}
+            }
+
+            if (billing === 'yearly') {
+                newExpiration.setFullYear(newExpiration.getFullYear() + 1);
+            } else {
+                newExpiration.setMonth(newExpiration.getMonth() + 1);
+            }
+
+            const licenseData = {
+                hwid: currentHwid,
+                code: licenseCode,
+                date: new Date().toISOString(),
+                expiresAt: newExpiration.toISOString(),
+                payment_id: payment_id,
+                plan: plan_id || 'pro',
+                billing: billing || 'monthly',
+                currency: currency || 'INR',
+                amount: amount || 0,
+            };
+
+            fs.writeFileSync(licensePath, JSON.stringify(licenseData, null, 2));
+            console.log(`[Licensing] License written successfully for payment ${payment_id} ✅`);
+            return { success: true };
+        } catch (err) {
+            console.error('[Licensing] Failed to write license file:', err);
+            return { success: false, error: 'License file could not be written. Please contact support.' };
+        }
     });
 
     ipcMain.handle('get-dictionary', () => userDictionary);
@@ -2407,7 +2994,9 @@ app.whenReady().then(() => {
             stopKeyboardListener();
         } else if (mode === 'keyword') {
             console.log('[MediScribe] Mode changed to keyword - listener will be started manually or via bubble');
-            // Removed auto-start here to allow "Pause/Start" paradigm
+        } else if (mode === 'template') {
+            console.log('[MediScribe] Mode changed to template - listener will be started manually');
+            loadTemplateLibrary(); // Refresh templates from disk
         }
 
         // Update floating button if it exists
@@ -2432,7 +3021,8 @@ app.whenReady().then(() => {
 
     ipcMain.handle('set-floating-button-position', (event, x, y) => {
         if (floatingButton) {
-            floatingButton.setPosition(x, y);
+            const nextPosition = getClampedFloatingButtonPosition(x, y);
+            floatingButton.setPosition(nextPosition.x, nextPosition.y);
         }
     });
 
@@ -2537,19 +3127,27 @@ app.whenReady().then(() => {
     });
     */
 
+    // LINUX ONLY: Dependency check
+    if (process.platform === 'linux') {
+        const { exec } = require('child_process');
+        exec('xdotool --version', (error) => {
+            if (error) {
+                console.warn('[MediScribe] Warning: xdotool not detected. Continuous typing will not work.');
+                console.log('[MediScribe] Please install it: sudo apt-get install xdotool');
+            }
+        });
+    }
+
     createWindow();
     createTray();
-    // createKeywordWindow(); // Disabled - using automatic keyboard listener instead
     startWhisperServer();
+    setupAutoUpdater(mainWindow);  // ← start background update checks
 
-    // Request accessibility permissions on macOS
+    // Request accessibility permissions on macOS (QUIET CHECK - NOT TRIGGERING POPUP)
     if (process.platform === 'darwin') {
         const { systemPreferences } = require('electron');
-        const isTrusted = systemPreferences.isTrustedAccessibilityClient(true);
+        const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
         console.log(`[MediScribe] Accessibility trusted: ${isTrusted}`);
-        if (!isTrusted) {
-            console.log('[MediScribe] Please grant accessibility permissions in System Settings');
-        }
     }
 
     // Register global shortcuts for quick access
@@ -2582,8 +3180,15 @@ app.whenReady().then(() => {
         // On macOS, it's common to re-create a window in the app when the
         // dock icon is clicked and there are no other windows open.
         if (mainWindow) {
-            if (!mainWindow.isVisible()) mainWindow.show();
-            if (mainWindow.isMinimized()) mainWindow.restore();
+            // Force restoration and showing if hidden/minimized
+            if (mainWindow.isMinimized()) {
+                console.log('[MediScribe] Restoring minimized window from Dock activation');
+                mainWindow.restore();
+            }
+            if (!mainWindow.isVisible()) {
+                console.log('[MediScribe] Showing hidden window from Dock activation');
+                mainWindow.show();
+            }
             mainWindow.focus();
 
             // Auto-restart Whisper server on app "open" (activation) if it's not running
@@ -2648,14 +3253,24 @@ ipcMain.handle('minimize-window', () => {
             // macOS full-screen windows cannot be minimized directly.
             // We must exit full-screen first.
             mainWindow.setFullScreen(false);
-            // Wait for the exit-fullscreen animation to complete
+            // Wait for the exit-fullscreen animation to complete, then minimize cleanly.
             setTimeout(() => {
                 if (mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.minimize();
+                    if (process.platform === 'darwin') {
+                        if (app.dock) app.dock.show();
+                        mainWindow.minimize();
+                    } else {
+                        mainWindow.hide();
+                    }
                 }
-            }, 800); // 800ms is safer for macOS animation
+            }, 800);
         } else {
-            mainWindow.minimize();
+            if (process.platform === 'darwin') {
+                if (app.dock) app.dock.show();
+                mainWindow.minimize();
+            } else {
+                mainWindow.hide();
+            }
         }
         return { success: true };
     }
@@ -2715,15 +3330,123 @@ ipcMain.handle('hide-floating-button', async () => {
     targetAppName = null;
 
     destroyFloatingButton();
-    // Do not auto-restore main window. Let the frontend decide.
-    // if (mainWindow) {
-    //     mainWindow.restore();
-    //     mainWindow.showInactive(); // Don't steal focus
-    // }
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
     return { success: true };
 });
 
+ipcMain.handle('restore-main-window', async () => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+    return { success: true };
+});
+
+// Template Library IPC handlers
+ipcMain.handle('get-templates', () => templateLibrary);
+
+ipcMain.handle('add-template', (event, { name, category, type, content, filePath, ext, originalFilename }) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return { success: false, error: 'Invalid template name' };
+    if (type === 'file' && !filePath) return { success: false, error: 'filePath required for file template' };
+    if (type !== 'file' && !content) return { success: false, error: 'content required for text template' };
+    templateLibrary.push({
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+        name: trimmedName,
+        category: category || 'General',
+        type: type || 'text',
+        content: content ? content.trim() : '',
+        filePath: filePath || null,
+        ext: ext || null,
+        originalFilename: originalFilename || null,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+    });
+    templateLibrary.sort((a, b) => a.name.localeCompare(b.name));
+    saveTemplateLibrary();
+    return { success: true, templates: templateLibrary };
+});
+
+ipcMain.handle('remove-template', (event, id) => {
+    const initialLen = templateLibrary.length;
+    templateLibrary = templateLibrary.filter(t => t.id !== id);
+    if (templateLibrary.length !== initialLen) saveTemplateLibrary();
+    return { success: true, templates: templateLibrary };
+});
+
+ipcMain.handle('update-template', (event, { id, name, category, type, content, filePath, ext, originalFilename }) => {
+    const index = templateLibrary.findIndex(t => t.id === id);
+    if (index !== -1) {
+        templateLibrary[index] = {
+            ...templateLibrary[index],
+            name: name.trim(),
+            category,
+            type: type || templateLibrary[index].type || 'text',
+            content: content ? content.trim() : (templateLibrary[index].content || ''),
+            filePath: filePath !== undefined ? filePath : templateLibrary[index].filePath,
+            ext: ext !== undefined ? ext : templateLibrary[index].ext,
+            originalFilename: originalFilename !== undefined ? originalFilename : templateLibrary[index].originalFilename,
+            updatedAt: Date.now()
+        };
+        templateLibrary.sort((a, b) => a.name.localeCompare(b.name));
+        saveTemplateLibrary();
+        return { success: true, templates: templateLibrary };
+    }
+    return { success: false, error: 'Template not found' };
+});
+
 // Keyboard listener IPC handlers for automatic keyword expansion
+ipcMain.handle('start-template-listener', async () => {
+    try {
+        loadTemplateLibrary();
+        currentTypingMode = 'template';
+        return startKeyboardListener();
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('stop-template-listener', async () => {
+    try {
+        stopKeyboardListener();
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// Save a template file sent as buffer from renderer's <input type="file">
+ipcMain.handle('save-template-file', async (event, { buffer, originalName, ext }) => {
+    try {
+        const safeBase = originalName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+        const destFilename = `${safeBase}_${Date.now()}.${ext.toLowerCase()}`;
+        const destPath = path.join(templateFilesDir, destFilename);
+        fs.writeFileSync(destPath, Buffer.from(buffer));
+        return { success: true, savedPath: destPath, originalName, ext: ext.toUpperCase() };
+    } catch (error) {
+        safeError('[MediScribe] save-template-file error:', error);
+        return { success: false, error: error.message };
+    }
+});
+
+// Delete a template file from disk
+ipcMain.handle('delete-template-file', async (event, filePath) => {
+    try {
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+
 ipcMain.handle('start-keyword-listener', async () => {
     try {
         if (process.stdout.writable) console.log('[MediScribe] start-keyword-listener IPC called');
@@ -2732,7 +3455,7 @@ ipcMain.handle('start-keyword-listener', async () => {
         try {
             if (process.stdout.writable) console.log('[MediScribe] Calling startKeyboardListener()...');
         } catch (err) { }
-        startKeyboardListener();
+        const result = startKeyboardListener();
         try {
             if (process.stdout.writable) console.log('[MediScribe] startKeyboardListener() completed');
         } catch (err) { }
@@ -2741,7 +3464,7 @@ ipcMain.handle('start-keyword-listener', async () => {
         // if (mainWindow) {
         //     mainWindow.minimize();
         // }
-        return { success: true };
+        return result;
     } catch (error) {
         try {
             if (process.stderr.writable) {
@@ -2782,21 +3505,32 @@ ipcMain.on('stop-recording', () => {
 // Handle toggle recording from floating button
 ipcMain.on('trigger-toggle-recording', async () => {
     console.log('[MediScribe Main] ===== TOGGLE ACTION TRIGGERED FROM FLOATING BUTTON =====');
-    // REMOVED: shell.beep() to avoid double sound (renderer already plays a beep)
     console.log('[MediScribe Main] Current isRecording state:', isRecording);
-    console.log('[MediScribe Main] mainWindow exists:', !!mainWindow);
-    console.log('[MediScribe Main] mainWindow.webContents exists:', !!(mainWindow && mainWindow.webContents));
 
-    if (mainWindow) {
-        if (mainWindow.webContents) {
-            console.log('[MediScribe Main] SENDING toggle-recording event to renderer');
-            mainWindow.webContents.send('toggle-recording');
-            console.log('[MediScribe Main] Event sent successfully');
-        } else {
-            console.error('[MediScribe Main] ERROR: mainWindow.webContents is NULL');
+    if (mainWindow && mainWindow.webContents) {
+        // Track whether the window was hidden before the IPC send
+        const wasHidden = !mainWindow.isVisible() || mainWindow.isMinimized();
+
+        console.log('[MediScribe Main] SENDING toggle-recording event to renderer');
+        mainWindow.webContents.send('toggle-recording');
+        console.log('[MediScribe Main] Event sent successfully');
+
+        // On macOS, sending IPC to a minimized window can cause it to restore.
+        // Keep it minimized in the Dock so the app remains findable while the bubble is active.
+        if (wasHidden) {
+            setImmediate(() => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    if (process.platform === 'darwin') {
+                        if (app.dock) app.dock.show();
+                        if (!mainWindow.isMinimized()) mainWindow.minimize();
+                    } else {
+                        mainWindow.hide();
+                    }
+                }
+            });
         }
     } else {
-        console.error('[MediScribe Main] ERROR: mainWindow is NULL');
+        console.error('[MediScribe Main] ERROR: mainWindow or webContents is NULL');
     }
 
     // Refresh target app name in the background

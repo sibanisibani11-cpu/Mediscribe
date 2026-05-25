@@ -119,10 +119,10 @@ const resend = new Resend(RESEND_API_KEY);
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function sendAnnouncements() {
-    console.log('🚀 Starting MediScribe v1.0.4 Announcement Broadcast...');
+    console.log('🚀 Starting MediScribe v1.1.0 Announcement Broadcast...');
     console.log(`📡 Using Sender: ${FROM_EMAIL}`);
 
-    const htmlPath = path.join(__dirname, '../docs/v1.0.4-announcement-email.html');
+    const htmlPath = path.join(__dirname, '../docs/v1.1.0-announcement-email.html');
     const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
     let successCount = 0;
@@ -135,9 +135,9 @@ async function sendAnnouncements() {
             const { data, error } = await resend.emails.send({
                 from: FROM_EMAIL,
                 to: [email],
-                subject: 'New Release: MediScribe v1.0.4 - The Midnight Cobalt Update',
+                subject: 'New Release: MediScribe v1.1.0 - The Midnight Cobalt Update',
                 html: htmlContent,
-                text: `MediScribe v1.0.4 Update\n\nDear Doctor,\n\nWe are excited to announce version 1.0.4 of MediScribe. This update introduces the "Midnight Cobalt" theme and improved performance across Windows, Mac, and Linux.\n\nDownload the new version at: https://mediapp.store/apps/YSP7J8pT50Xd2eBTwnBU\n\nRegards,\nMediScribe Team`,
+                text: `MediScribe v1.1.0 Update\n\nDear Doctor,\n\nWe are excited to announce version 1.1.0 of MediScribe. This update introduces the "Midnight Cobalt" theme and improved performance across Windows, Mac, and Linux.\n\nDownload the new version at: https://mediapp.store/apps/YSP7J8pT50Xd2eBTwnBU\n\nRegards,\nMediScribe Team`,
             });
 
             if (error) {

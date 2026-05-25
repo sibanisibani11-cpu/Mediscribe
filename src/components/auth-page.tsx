@@ -164,7 +164,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
                                             placeholder="doctor@example.com"
-                                            className="flex h-10 w-full rounded-md border border-slate-200/60 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 px-3 py-2 pl-10 text-sm placeholder:text-slate-50 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all disabled:opacity-50 shadow-sm"
+                                            className="flex h-10 w-full rounded-md border border-slate-200/60 dark:border-slate-700 bg-white/50 dark:bg-slate-900/50 px-3 py-2 pl-10 text-sm placeholder:text-slate-50 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all disabled:opacity-50 shadow-sm"
                                             required
                                         />
                                     </div>
@@ -207,7 +207,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
 
                                 <Button
                                     type="submit"
-                                    className="w-full h-11 mt-6 cobalt-gradient hover:opacity-90 text-white font-bold transition-all shadow-lg hover:shadow-blue-500/25 disabled:opacity-70 disabled:cursor-not-allowed"
+                                    className="w-full h-11 mt-6 cobalt-gradient hover:opacity-90 text-white font-bold transition-all shadow-lg hover:shadow-violet-500/25 disabled:opacity-70 disabled:cursor-not-allowed"
                                     disabled={isLoading}
                                 >
                                     {isLoading ? (

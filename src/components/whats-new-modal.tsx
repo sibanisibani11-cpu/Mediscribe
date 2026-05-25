@@ -36,25 +36,25 @@ export function WhatsNewModal({ version }: WhatsNewModalProps) {
         {
             title: "Enhanced Bubble Stability",
             description: "Complete architectural rewrite of the floating bubble for 100% responsiveness and zero latency.",
-            icon: <Monitor className="h-5 w-5 text-blue-600" />,
+            icon: <Monitor className="h-5 w-5 text-violet-600" />,
             tag: "CORE"
         },
         {
             title: "Cross-Platform Fixes",
             description: "Resolved erratic clicking behaviors on Windows. The bubble now works flawlessly on both Mac and PC.",
-            icon: <MousePointer2 className="h-5 w-5 text-blue-600" />,
+            icon: <MousePointer2 className="h-5 w-5 text-violet-600" />,
             tag: "FIX"
         },
         {
             title: "Unified Interaction",
             description: "You can now Pause and Resume both Dictation and Keyword modes directly from the bubble button.",
-            icon: <Zap className="h-5 w-5 text-blue-500" />,
+            icon: <Zap className="h-5 w-5 text-violet-500" />,
             tag: "NEW"
         },
         {
             title: "Smart Layouts",
             description: "Improved auto-minimization ensure your workspace stays clean while you focus on patient care.",
-            icon: <Sparkles className="h-5 w-5 text-blue-600" />,
+            icon: <Sparkles className="h-5 w-5 text-violet-600" />,
             tag: "UX"
         }
     ];
@@ -100,7 +100,7 @@ export function WhatsNewModal({ version }: WhatsNewModalProps) {
                                     <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">
                                         {update.title}
                                     </h4>
-                                    <span className="text-[9px] font-black text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded uppercase tracking-tighter">
+                                    <span className="text-[9px] font-black text-violet-600 bg-violet-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded uppercase tracking-tighter">
                                         {update.tag}
                                     </span>
                                 </div>

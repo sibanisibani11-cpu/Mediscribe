@@ -1,342 +1,474 @@
 <!DOCTYPE html>
 <html>
-
 <head>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            width: 140px;
-            height: 140px;
+            width: 160px;
+            height: 175px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             background: transparent !important;
             font-family: -apple-system, BlinkMacSystemFont, 'Outfit', 'Segoe UI', Roboto, sans-serif;
-            position: relative;
             overflow: hidden;
             user-select: none;
-            /* Critical: pointer-events none on body allows clicking through to desktop */
-            /* We will toggle this in main.js based on move events, but let's set it here too */
             pointer-events: none;
         }
 
+        /* ── Close button (top-right absolute) ── */
         .close-btn {
             position: absolute;
-            top: 5px;
-            right: 15px;
-            width: 22px;
-            height: 22px;
-            background: rgba(15, 23, 42, 0.6);
-            color: white;
+            top: 4px;
+            right: 6px;
+            width: 20px;
+            height: 20px;
+            background: rgba(15, 23, 42, 0.55);
+            color: rgba(255,255,255,0.6);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 13px;
+            line-height: 1;
             cursor: pointer;
             z-index: 100;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+            border: 1px solid rgba(255,255,255,0.08);
             pointer-events: auto;
         }
+        .close-btn:hover { background: rgba(239,68,68,0.75); color: white; transform: scale(1.1); }
 
-        .close-btn:hover {
-            background: rgba(239, 68, 68, 0.8);
-            transform: scale(1.1);
-        }
-
-        .mode-btn {
-            position: absolute;
-            top: 5px;
-            left: 15px;
-            width: 28px;
-            height: 28px;
-            background: rgba(15, 23, 42, 0.6);
-            color: white;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 100;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            pointer-events: auto;
-        }
-
-        .mode-btn:hover {
-            background: rgba(99, 102, 241, 0.4);
-            transform: translateY(-1px);
-        }
-
-        .bubble-container {
+        /* ─────────────────────────────────────────
+           TRIANGLE TOGGLE CONTAINER
+           We use absolute positioning inside a fixed
+           square to place 3 nodes at triangle corners.
+        ───────────────────────────────────────── */
+        .triangle-wrap {
             position: relative;
-            width: 100px;
-            height: 100px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            /* We allow dragging from the container area */
-            pointer-events: auto;
-            cursor: move;
-        }
-
-        .bubble {
-            width: 72px;
-            height: 72px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #6366f1, #d946ef);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            pointer-events: auto;
-            -webkit-app-region: no-drag;
-            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-            position: relative;
-            z-index: 10;
-            box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-            border: 2px solid rgba(255, 255, 255, 0.4);
-        }
-
-        .bubble:hover {
-            transform: scale(1.08);
-            box-shadow: 0 15px 40px rgba(99, 102, 241, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.6);
-        }
-
-        .bubble:active {
-            transform: scale(0.92);
-            filter: brightness(1.1);
-        }
-
-        .body-recording .bubble {
-            animation: pulse-recording 2s infinite;
-            background: linear-gradient(135deg, #6366f1, #d946ef);
-            border-color: rgba(255, 255, 255, 0.8);
-            box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-        }
-
-        @keyframes pulse-recording {
-            0% {
-                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.6);
-            }
-
-            70% {
-                box-shadow: 0 0 0 20px rgba(99, 102, 241, 0);
-            }
-
-            100% {
-                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
-            }
-        }
-
-        .wave {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background: rgba(99, 102, 241, 0.2);
-            z-index: 1;
+            width: 150px;
+            height: 155px;
+            margin-top: 8px;
             pointer-events: none;
         }
 
-        .body-recording .wave {
-            animation: wave-expand 2s infinite;
-            background: rgba(99, 102, 241, 0.2);
-        }
-
-        @keyframes wave-expand {
-            0% {
-                transform: scale(0.8);
-                opacity: 0.8;
-            }
-
-            100% {
-                transform: scale(2.2);
-                opacity: 0;
-            }
-        }
-
-        #click-indicator {
+        /* ── Mode nodes (corner buttons) ── */
+        .mode-node {
             position: absolute;
-            width: 100%;
-            height: 100%;
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
-            border: 4px solid white;
-            opacity: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            pointer-events: auto;
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            border: 2px solid rgba(255,255,255,0.12);
+            background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(10px);
+            z-index: 20;
+        }
+        .mode-node:hover {
+            transform: scale(1.15);
+            border-color: rgba(255,255,255,0.35);
+        }
+        .mode-node:active { transform: scale(0.92); }
+
+        /* Active state glow per mode */
+        .mode-node.active-dictation {
+            background: linear-gradient(135deg, #6366f1, #d946ef);
+            border-color: rgba(255,255,255,0.35);
+            box-shadow: 0 0 14px 3px rgba(99,102,241,0.6), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+        .mode-node.active-keyword {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            border-color: rgba(255,255,255,0.35);
+            box-shadow: 0 0 14px 3px rgba(14,165,233,0.6), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+        .mode-node.active-template {
+            background: linear-gradient(135deg, #7c3aed, #10b981);
+            border-color: rgba(255,255,255,0.35);
+            box-shadow: 0 0 14px 3px rgba(124,58,237,0.6), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+
+        /* Triangle corner positions (equilateral, inside 150×155 box)
+           Top-center: (55, 4)   ← dictation
+           Bottom-left: (4, 108) ← keyword
+           Bottom-right: (106, 108) ← template
+        */
+        #node-dictation { top: 4px;   left: 55px; }
+        #node-keyword   { top: 108px; left: 4px;  }
+        #node-template  { top: 108px; left: 106px;}
+
+        /* Node label tooltip */
+        .node-tip {
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.55);
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .mode-node.active-dictation .node-tip,
+        .mode-node.active-keyword .node-tip,
+        .mode-node.active-template .node-tip { color: rgba(255,255,255,0.9); }
+
+        /* ── Central action bubble ── */
+        .center-bubble {
+            position: absolute;
+            /* Center of the triangle */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -44%);
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            pointer-events: auto;
+            z-index: 15;
+            border: 2.5px solid rgba(255,255,255,0.35);
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .center-bubble.mode-dictation {
+            background: linear-gradient(135deg, #6366f1, #d946ef);
+            box-shadow: 0 10px 28px rgba(99,102,241,0.55), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+        .center-bubble.mode-keyword {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            box-shadow: 0 10px 28px rgba(14,165,233,0.55), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+        .center-bubble.mode-template {
+            background: linear-gradient(135deg, #7c3aed, #10b981);
+            box-shadow: 0 10px 28px rgba(124,58,237,0.55), inset 0 0 0 1px rgba(255,255,255,0.2);
+        }
+
+        .center-bubble:hover { transform: translate(-50%, -44%) scale(1.08); border-color: rgba(255,255,255,0.55); }
+        .center-bubble:active { transform: translate(-50%, -44%) scale(0.93); filter: brightness(1.15); }
+
+        /* Recording pulse */
+        .body-recording .center-bubble {
+            animation: pulse-rec 1.8s infinite;
+        }
+        @keyframes pulse-rec {
+            0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.7); }
+            70%  { box-shadow: 0 0 0 18px rgba(99,102,241,0); }
+            100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+        }
+
+        /* Wave ring for recording */
+        .wave-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -44%);
+            width: 62px;
+            height: 62px;
+            border-radius: 50%;
+            background: rgba(99,102,241,0.15);
             z-index: 5;
             pointer-events: none;
+            opacity: 0;
+        }
+        .body-recording .wave-ring {
+            animation: wave-expand 1.8s infinite;
+        }
+        @keyframes wave-expand {
+            0%   { transform: translate(-50%, -44%) scale(0.9); opacity: 0.8; }
+            100% { transform: translate(-50%, -44%) scale(2.5); opacity: 0; }
         }
 
-        .animate-click {
-            animation: click-ripple 0.4s ease-out;
+        /* Click ripple */
+        .click-ripple {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -44%);
+            width: 62px; height: 62px;
+            border-radius: 50%;
+            border: 3px solid white;
+            opacity: 0;
+            z-index: 8;
+            pointer-events: none;
+        }
+        .animate-click { animation: ripple 0.4s ease-out; }
+        @keyframes ripple {
+            0%   { transform: translate(-50%, -44%) scale(0.85); opacity: 0.9; }
+            100% { transform: translate(-50%, -44%) scale(1.7);  opacity: 0; }
         }
 
-        @keyframes click-ripple {
-            0% {
-                transform: scale(0.8);
-                opacity: 1;
-            }
+        /* Connector lines between nodes (decorative) */
+        .connector-svg {
+            position: absolute;
+            top: 0; left: 0;
+            width: 150px; height: 155px;
+            pointer-events: none;
+            z-index: 1;
+        }
 
-            100% {
-                transform: scale(1.5);
-                opacity: 0;
-            }
+        /* Drag handle area — the whole wrap */
+        .drag-zone {
+            position: absolute;
+            inset: 0;
+            cursor: move;
+            pointer-events: auto;
+            z-index: 0;
         }
     </style>
 </head>
 
 <body id="app-body">
-    <div class="close-btn" id="close-btn" title="Close Bubble">×</div>
-    <div class="mode-btn" id="mode-btn" title="Switch Mode">
-        <div id="mode-icon-container"></div>
-    </div>
-    <div class="bubble-container" id="drag-container">
-        <div class="wave"></div>
-        <div id="click-indicator"></div>
-        <div class="bubble" id="main-bubble">
-            <div id="icon-content"></div>
+    <div class="close-btn" id="close-btn">×</div>
+
+    <div class="triangle-wrap" id="triangle-wrap">
+        <!-- Drag-through area behind everything -->
+        <div class="drag-zone" id="drag-zone"></div>
+
+        <!-- Decorative connector SVG -->
+        <svg class="connector-svg" id="connector-svg">
+            <!-- lines: top-center(75,24) → bottom-left(24,128) → bottom-right(126,128) → top-center -->
+            <line id="line-dk" x1="75" y1="24" x2="24" y2="128"
+                  stroke="rgba(255,255,255,0.06)" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <line id="line-kt" x1="24" y1="128" x2="126" y2="128"
+                  stroke="rgba(255,255,255,0.06)" stroke-width="1.5" stroke-dasharray="4 4"/>
+            <line id="line-td" x1="126" y1="128" x2="75" y2="24"
+                  stroke="rgba(255,255,255,0.06)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        </svg>
+
+        <!-- ── Triangle corner nodes ── -->
+        <div class="mode-node" id="node-dictation" title="Dictation">
+            <div id="icon-dictation"></div>
+            <span class="node-tip">Dictate</span>
+        </div>
+        <div class="mode-node" id="node-keyword" title="Keyword">
+            <div id="icon-keyword"></div>
+            <span class="node-tip">Keyword</span>
+        </div>
+        <div class="mode-node" id="node-template" title="Template">
+            <div id="icon-template"></div>
+            <span class="node-tip">Template</span>
+        </div>
+
+        <!-- Wave ring -->
+        <div class="wave-ring"></div>
+        <!-- Click ripple -->
+        <div class="click-ripple" id="click-ripple"></div>
+        <!-- ── Central action button ── -->
+        <div class="center-bubble mode-dictation" id="center-bubble">
+            <div id="center-icon"></div>
         </div>
     </div>
+
     <script>
         const { ipcRenderer } = require('electron');
 
-        console.log('[Bubble] Initialized');
-
         let isRecording = false;
-        let currentMode = 'dictation';
+        let currentMode = 'dictation'; // dictation | keyword | template
 
-        const bubble = document.getElementById('main-bubble');
-        const modeBtn = document.getElementById('mode-btn');
-        const closeBtn = document.getElementById('close-btn');
-        const indicator = document.getElementById('click-indicator');
+        const body        = document.getElementById('app-body');
+        const centerBubble = document.getElementById('center-bubble');
+        const centerIcon  = document.getElementById('center-icon');
+        const ripple      = document.getElementById('click-ripple');
+        const closeBtn    = document.getElementById('close-btn');
+
+        const nodeDictation = document.getElementById('node-dictation');
+        const nodeKeyword   = document.getElementById('node-keyword');
+        const nodeTemplate  = document.getElementById('node-template');
+
+        const iconDictation = document.getElementById('icon-dictation');
+        const iconKeyword   = document.getElementById('icon-keyword');
+        const iconTemplate  = document.getElementById('icon-template');
+
+        // ── SVG Icons ──
+        const ICONS = {
+            mic: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
+            stop: `<svg width="26" height="26" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`,
+            keyboard: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>`,
+            template: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>`,
+            // Smaller variants for the corner nodes
+            micSm: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
+            keyboardSm: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>`,
+            templateSm: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>`,
+        };
+
+        // Static icons on corner nodes (always the same icon)
+        iconDictation.innerHTML = ICONS.micSm;
+        iconKeyword.innerHTML   = ICONS.keyboardSm;
+        iconTemplate.innerHTML  = ICONS.templateSm;
 
         function updateUI() {
-            const body = document.getElementById('app-body');
-            const iconContent = document.getElementById('icon-content');
-            const modeIcon = document.getElementById('mode-icon-container');
+            // ── Centre bubble ──
+            centerBubble.className = `center-bubble mode-${currentMode}`;
 
             if (isRecording) {
                 body.classList.add('body-recording');
-                modeBtn.style.display = 'none';
-                // Stop/Pause icon
-                iconContent.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="white"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+                centerIcon.innerHTML = ICONS.stop;
             } else {
                 body.classList.remove('body-recording');
-                modeBtn.style.display = 'flex';
-                if (currentMode === 'keyword') {
-                    // Keyboard icon for active bubble
-                    iconContent.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>';
-                    // Mic icon for mode switcher (indicates clicking switch to dictation)
-                    modeIcon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
-                } else {
-                    // Mic icon for active bubble
-                    iconContent.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
-                    // Keyboard icon for mode switcher
-                    modeIcon.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></svg>';
-                }
+                if (currentMode === 'dictation')  centerIcon.innerHTML = ICONS.mic;
+                if (currentMode === 'keyword')     centerIcon.innerHTML = ICONS.keyboard;
+                if (currentMode === 'template')    centerIcon.innerHTML = ICONS.template;
             }
+
+            // ── Corner node highlights ──
+            nodeDictation.className = `mode-node${currentMode === 'dictation' ? ' active-dictation' : ''}`;
+            nodeKeyword.className   = `mode-node${currentMode === 'keyword'   ? ' active-keyword'   : ''}`;
+            nodeTemplate.className  = `mode-node${currentMode === 'template'  ? ' active-template'  : ''}`;
+
+            // Re-inject static icons (class change clears children structure but not innerHTML)
+            iconDictation.innerHTML = ICONS.micSm;
+            iconKeyword.innerHTML   = ICONS.keyboardSm;
+            iconTemplate.innerHTML  = ICONS.templateSm;
+
+            // ── Update connector line colours to highlight active edges ──
+            const svg = document.getElementById('connector-svg');
+            const glowColor = {
+                dictation: 'rgba(99,102,241,0.35)',
+                keyword:   'rgba(14,165,233,0.35)',
+                template:  'rgba(124,58,237,0.35)',
+            }[currentMode];
+
+            const inactiveColor = 'rgba(255,255,255,0.06)';
+
+            document.getElementById('line-dk').setAttribute('stroke',
+                (currentMode === 'dictation' || currentMode === 'keyword') ? glowColor : inactiveColor);
+            document.getElementById('line-kt').setAttribute('stroke',
+                (currentMode === 'keyword' || currentMode === 'template') ? glowColor : inactiveColor);
+            document.getElementById('line-td').setAttribute('stroke',
+                (currentMode === 'template' || currentMode === 'dictation') ? glowColor : inactiveColor);
         }
 
-        // Use click for better compatibility, but mouseDown for immediate feedback
-        bubble.addEventListener('click', (e) => {
-            console.log('[Bubble] Click event');
+        // ── Centre bubble click ── toggle in ALL modes; double-click restores window
+        let clickTimer = null;
+        centerBubble.addEventListener('click', (e) => {
             e.stopPropagation();
 
-            // Visual pulse
-            indicator.classList.remove('animate-click');
-            void indicator.offsetWidth; // trigger reflow
-            indicator.classList.add('animate-click');
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
 
-            ipcRenderer.send('trigger-toggle-recording');
+            clickTimer = setTimeout(() => {
+                clickTimer = null;
+                ripple.classList.remove('animate-click');
+                void ripple.offsetWidth;
+                ripple.classList.add('animate-click');
+
+                // Send toggle signal regardless of mode.
+                // The renderer (DictationView / KeywordView / TemplateView) handles the actual
+                // start/stop logic. The main process re-hides the window after forwarding the event.
+                ipcRenderer.send('trigger-toggle-recording');
+            }, 180);
         });
 
-        modeBtn.addEventListener('click', (e) => {
+        centerBubble.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            const next = currentMode === 'dictation' ? 'keyword' : 'dictation';
-            ipcRenderer.invoke('set-typing-mode', next);
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
+            ipcRenderer.invoke('restore-main-window');
         });
 
+        // ── Triangle corner node clicks → switch mode ──
+        nodeDictation.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentMode !== 'dictation') ipcRenderer.invoke('set-typing-mode', 'dictation');
+        });
+        nodeKeyword.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentMode !== 'keyword') ipcRenderer.invoke('set-typing-mode', 'keyword');
+        });
+        nodeTemplate.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (currentMode !== 'template') ipcRenderer.invoke('set-typing-mode', 'template');
+        });
+
+        // ── Close ──
         closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             ipcRenderer.invoke('hide-floating-button');
         });
 
-        ipcRenderer.on('rec-state-change', (event, state) => {
-            console.log('[Bubble] State changed:', state);
+        // ── IPC listeners ──
+        ipcRenderer.on('rec-state-change', (_e, state) => {
             isRecording = state;
             updateUI();
         });
-
-        ipcRenderer.on('typing-mode-change', (event, mode) => {
-            console.log('[Bubble] Mode changed:', mode);
+        ipcRenderer.on('typing-mode-change', (_e, mode) => {
             currentMode = mode;
             updateUI();
         });
 
-        // Initialize state
         updateUI();
         ipcRenderer.send('request-bubble-state');
 
-        // Robust dragging logic
-        let dragging = false;
-        let startX, startY, winX, winY;
+        // ── Dragging (drag-zone + triangle-wrap, but not the interactive nodes) ──
+        let dragging = false, dragReady = false, startX = 0, startY = 0, winX = 0, winY = 0;
 
-        document.getElementById('drag-container').addEventListener('mousedown', (e) => {
-            if (e.target.closest('#main-bubble') || e.target.closest('#mode-btn') || e.target.closest('#close-btn')) return;
-
+        document.getElementById('drag-zone').addEventListener('mousedown', (e) => {
             dragging = true;
+            dragReady = false;
             startX = e.screenX; startY = e.screenY;
             ipcRenderer.invoke('get-floating-button-position').then(pos => {
+                if (!dragging) return;
                 winX = pos.x; winY = pos.y;
+                dragReady = true;
+            }).catch(() => {
+                dragging = false;
+                dragReady = false;
             });
-
-            // Re-capture focus logic might be needed here
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (!dragging) return;
-            const dx = e.screenX - startX;
-            const dy = e.screenY - startY;
-            ipcRenderer.invoke('set-floating-button-position', winX + dx, winY + dy);
+            if (!dragging || !dragReady) return;
+            ipcRenderer.invoke('set-floating-button-position',
+                winX + (e.screenX - startX),
+                winY + (e.screenY - startY));
         });
 
         window.addEventListener('mouseup', () => {
             if (dragging) {
                 dragging = false;
+                dragReady = false;
                 ipcRenderer.invoke('save-floating-button-position');
             }
         });
 
-        // Tell main.js where the hoverable elements are for setIgnoreMouseEvents optimization
-        // This is advanced but ensures transparency works while maintaining clickability
-        function updatePointerStatus() {
-            window.addEventListener('mousemove', (e) => {
-                const overElement = document.elementFromPoint(e.clientX, e.clientY);
-                const isOverClickable = overElement && (
-                    overElement.closest('#main-bubble') ||
-                    overElement.closest('#mode-btn') ||
-                    overElement.closest('#close-btn') ||
-                    overElement.closest('#drag-container')
-                );
+        // ── Click-through transparency ──
+        let lastIgnoreState = null;
+        const setIgnoreMouseEvents = (ignore) => {
+            if (dragging) ignore = false;
+            if (lastIgnoreState === ignore) return;
+            lastIgnoreState = ignore;
+            ipcRenderer.send('set-ignore-mouse-events', ignore);
+        };
 
-                ipcRenderer.send('set-ignore-mouse-events', !isOverClickable);
-            });
-        }
+        window.addEventListener('mousemove', (e) => {
+            const over = document.elementFromPoint(e.clientX, e.clientY);
+            const clickable = over && (
+                over.closest('#center-bubble') ||
+                over.closest('#node-dictation') ||
+                over.closest('#node-keyword')   ||
+                over.closest('#node-template')  ||
+                over.closest('#close-btn')       ||
+                over.closest('#drag-zone')
+            );
+            setIgnoreMouseEvents(!clickable);
+        });
 
-        // Enable dynamic click-through
-        updatePointerStatus();
+        window.addEventListener('mouseleave', () => setIgnoreMouseEvents(false));
+        window.addEventListener('mousedown', () => setIgnoreMouseEvents(false));
     </script>
 </body>
-
 </html>

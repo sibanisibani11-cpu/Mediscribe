@@ -370,7 +370,7 @@ export function KeywordLibraryManager() {
                                                             if (e.key === "Escape") handleCancelEdit();
                                                         }}
                                                         rows={1}
-                                                        className="w-full min-h-[60px] bg-white dark:bg-black/40 border border-blue-300 dark:border-blue-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none [field-sizing:content]"
+                                                        className="w-full min-h-[60px] bg-white dark:bg-black/40 border border-blue-300 dark:border-blue-700 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500 resize-none [field-sizing:content]"
                                                         placeholder="Expansion"
                                                     />
                                                 </div>
@@ -401,14 +401,14 @@ export function KeywordLibraryManager() {
                                                         className={cn(
                                                             "w-4 h-4 rounded border flex items-center justify-center transition-colors",
                                                             selectedIds.has(entry.id)
-                                                                ? "bg-blue-500 border-blue-500 text-white"
+                                                                ? "bg-violet-500 border-violet-500 text-white"
                                                                 : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950"
                                                         )}
                                                     >
                                                         {selectedIds.has(entry.id) && <Check className="h-3 w-3 stroke-[3]" />}
                                                     </div>
                                                 </div>
-                                                <div className="w-1/4 min-w-[120px] text-sm font-bold text-blue-600 dark:text-blue-400 break-words py-1">
+                                                <div className="w-1/4 min-w-[120px] text-sm font-bold text-violet-600 dark:text-violet-400 break-words py-1">
                                                     {entry.keyword}
                                                 </div>
                                                 <div className="flex-1 text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap overflow-hidden text-ellipsis py-1 leading-relaxed">
@@ -419,7 +419,7 @@ export function KeywordLibraryManager() {
                                                         variant="ghost"
                                                         size="icon"
                                                         onClick={() => handleStartEdit(entry)}
-                                                        className="h-8 w-8 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                                                        className="h-8 w-8 text-slate-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-blue-900/30"
                                                         title="Edit"
                                                     >
                                                         <Edit2 className="h-4 w-4" />
