@@ -100,21 +100,21 @@ jobs:
       #    On branch push:   build only, no publish
       - name: Build Electron App
         run: |
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          [[ -n "${{ secrets.CSC_LINK }}" ]] && export CSC_LINK="${{ secrets.CSC_LINK }}"
+          [[ -n "${{ secrets.CSC_KEY_PASSWORD }}" ]] && export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
+          [[ -n "${{ secrets.APPLE_ID }}" ]] && export APPLE_ID="${{ secrets.APPLE_ID }}"
+          [[ -n "${{ secrets.APPLE_ID_PASSWORD }}" ]] && export APPLE_ID_PASSWORD="${{ secrets.APPLE_ID_PASSWORD }}"
+          [[ -n "${{ secrets.APPLE_TEAM_ID }}" ]] && export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          [[ -n "${{ secrets.WIN_CSC_LINK }}" ]] && export WIN_CSC_LINK="${{ secrets.WIN_CSC_LINK }}"
+          [[ -n "${{ secrets.WIN_CSC_KEY_PASSWORD }}" ]] && export WIN_CSC_KEY_PASSWORD="${{ secrets.WIN_CSC_KEY_PASSWORD }}"
+          
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             npx electron-builder --${{ matrix.platform }} --publish=always
           else
             npx electron-builder --${{ matrix.platform }} --publish=never
           fi
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       # ── 9. Upload Artifacts ───────────────────────────────────────────────
       - name: Upload Artifacts
