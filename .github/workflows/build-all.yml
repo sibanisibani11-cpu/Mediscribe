@@ -81,9 +81,7 @@ jobs:
 
       # ── 5. Rebuild native modules for the current platform ─────────────────
       - name: Rebuild native modules
-        run: npx electron-rebuild --force --module-dir .
-        env:
-          npm_config_platform: ${{ matrix.target_platform }}
+        run: npx electron-builder install-app-deps
 
       # ── 6. Bundle binaries ────────────────────────────────────────────────
       - name: Bundle Models and Binaries

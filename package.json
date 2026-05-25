@@ -13,7 +13,7 @@
     "dev": "next dev --turbopack -p 9002",
     "electron": "electron .",
     "electron:dev": "pkill -f \"electron .\" || true; lsof -i :9002 -i :8081 -i :8080 -t | xargs kill -9 2>/dev/null || true; concurrently \"npm run dev\" \"wait-on http://localhost:9002 && NODE_ENV=development electron .\"",
-    "build": "NODE_ENV=production next build",
+    "build": "next build",
     "build:electron": "npm run build && electron-builder",
     "build:all": "npm run build && electron-builder --mac --win --linux",
     "build:dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --win --linux --publish=never",
