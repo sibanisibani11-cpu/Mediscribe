@@ -189,7 +189,7 @@
       "icon": "build/icon.ico",
       "publisherName": "MediScribe",
       "verifyUpdateCodeSignature": false,
-      "requestedExecutionLevel": "requireAdministrator"
+      "requestedExecutionLevel": "asInvoker"
     },
     "appx": {
       "identityName": "mediapp.MediScribe",

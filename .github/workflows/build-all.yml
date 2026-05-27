@@ -25,14 +25,16 @@ jobs:
       - name: Install icon generation deps
         run: npm install --no-save sharp png-to-ico
 
-      - name: Generate icon.ico
+      - name: Generate icon.ico and AppX tile assets
         run: node scripts/generate-icons.js
 
-      - name: Upload icon artifact
+      - name: Upload icon artifacts
         uses: actions/upload-artifact@v4
         with:
           name: platform-icons
-          path: build/icon.ico
+          path: |
+            build/icon.ico
+            build/appx/
           retention-days: 1
 
   # ── Platform builds ───────────────────────────────────────────────────────

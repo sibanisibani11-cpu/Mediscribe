@@ -1,6 +1,7 @@
 /**
  * generate-icons.js
  * Converts icon.png -> icon.ico (Windows) and icon.icns (macOS) for electron-builder.
+ * Also generates AppX tile assets in build/appx/ for Windows Store compliance.
  *
  * Run with: node scripts/generate-icons.js
  *
@@ -16,6 +17,7 @@ const ROOT = path.join(__dirname, '..');
 const SRC_PNG = path.join(ROOT, 'build', 'icon.png');  // icon lives in build/
 const BUILD_DIR = path.join(ROOT, 'build');
 const OUT_ICO = path.join(BUILD_DIR, 'icon.ico');
+const APPX_DIR = path.join(BUILD_DIR, 'appx');
 
 if (!fs.existsSync(SRC_PNG)) {
     console.error('❌  icon.png not found at project root!');
@@ -58,7 +60,43 @@ async function generateIco() {
     console.log(`✅  icon.ico  → ${OUT_ICO}  (${(icoBuffer.length / 1024).toFixed(1)} KB, sizes: ${sizes.join(', ')})`);
 }
 
-generateIco().catch(err => {
-    console.error('❌  ICO generation failed:', err.message);
+async function generateAppxIcons() {
+    if (!fs.existsSync(APPX_DIR)) {
+        fs.mkdirSync(APPX_DIR, { recursive: true });
+    }
+
+    const appxTargets = [
+        { name: 'Square44x44Logo.png', w: 44, h: 44, fit: 'cover' },
+        { name: 'Square150x150Logo.png', w: 150, h: 150, fit: 'cover' },
+        { name: 'Wide310x150Logo.png', w: 310, h: 150, fit: 'contain' },
+        { name: 'StoreLogo.png', w: 50, h: 50, fit: 'cover' },
+        { name: 'BadgeLogo.png', w: 24, h: 24, fit: 'cover' },
+        { name: 'LargeTile.png', w: 310, h: 310, fit: 'cover' },
+        { name: 'SmallTile.png', w: 71, h: 71, fit: 'cover' },
+        { name: 'SplashScreen.png', w: 620, h: 300, fit: 'contain' }
+    ];
+
+    console.log('🎨  Generating Windows AppX Tile Assets...');
+    for (const target of appxTargets) {
+        const outPath = path.join(APPX_DIR, target.name);
+        await sharp(SRC_PNG)
+            .resize(target.w, target.h, {
+                fit: target.fit,
+                background: { r: 0, g: 0, b: 0, alpha: 0 }
+            })
+            .png()
+            .toFile(outPath);
+        console.log(`✅  ${target.name}  → ${outPath} (${target.w}x${target.h})`);
+    }
+}
+
+async function main() {
+    await generateIco();
+    await generateAppxIcons();
+    console.log('🎉  All icons successfully generated!');
+}
+
+main().catch(err => {
+    console.error('❌  Icon generation failed:', err.message);
     process.exit(1);
 });

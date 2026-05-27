@@ -4318,16 +4318,37 @@ ipcMain.handle('check-whisper-status', async () => {
 function convertToWav(inputPath, outputPath) {
     return new Promise((resolve, reject) => {
         const ffmpegPath = getFFmpegPath();
+        const args = [
+            '-y',
+            '-i', inputPath,
+            '-vn',
+            '-sn',
+            '-map_metadata', '-1',
+            '-ar', '16000',
+            '-ac', '1',
+            '-c:a', 'pcm_s16le',
+            '-f', 'wav',
+            outputPath
+        ];
 
-        // Convert to 16kHz mono WAV (required by whisper.cpp)
-        // -vn and -sn strip video/subtitles
-        // -map_metadata -1 ensures no problematic metadata headers are included
-        const ffmpegCmd = `"${ffmpegPath}" -y -i "${inputPath}" -vn -sn -map_metadata -1 -ar 16000 -ac 1 -c:a pcm_s16le -f wav "${outputPath}"`;
-        exec(ffmpegCmd, (error, stdout, stderr) => {
-            if (error) {
-                reject(new Error(`FFmpeg conversion failed: ${error.message}`));
-            } else {
+        console.log(`[MediScribe] Converting audio with ffmpeg: "${ffmpegPath}" ${args.join(' ')}`);
+
+        const ffmpegProc = spawn(ffmpegPath, args);
+        let stderrData = '';
+
+        ffmpegProc.stderr.on('data', (data) => {
+            stderrData += data.toString();
+        });
+
+        ffmpegProc.on('error', (err) => {
+            reject(new Error(`FFmpeg spawn failed: ${err.message}`));
+        });
+
+        ffmpegProc.on('close', (code) => {
+            if (code === 0) {
                 resolve(outputPath);
+            } else {
+                reject(new Error(`FFmpeg exited with code ${code}. Stderr: ${stderrData}`));
             }
         });
     });
