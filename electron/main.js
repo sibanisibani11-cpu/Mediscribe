@@ -105,6 +105,13 @@ ipcMain.handle('install-update', () => {
     if (autoUpdater) autoUpdater.quitAndInstall(false, true);
 });
 
+ipcMain.handle('open-external', async (event, url) => {
+    if (!url || typeof url !== 'string') {
+        throw new Error('Invalid external URL');
+    }
+    await shell.openExternal(url);
+    return { success: true };
+});
 
 ipcMain.handle('google-logout', async () => {
     return logoutGoogle();

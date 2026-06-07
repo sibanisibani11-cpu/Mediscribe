@@ -13,6 +13,13 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+// In CI, icons are generated in a dedicated job and passed as artifacts.
+// The prebuild step sets SKIP_ICON_GENERATION=true to avoid overwriting them.
+if (process.env.SKIP_ICON_GENERATION === 'true') {
+    console.log('⏭️  SKIP_ICON_GENERATION=true — skipping icon generation (already done in CI).');
+    process.exit(0);
+}
+
 const ROOT = path.join(__dirname, '..');
 const SRC_PNG = path.join(ROOT, 'build', 'icon.png');  // icon lives in build/
 const BUILD_DIR = path.join(ROOT, 'build');

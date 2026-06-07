@@ -3,7 +3,7 @@
 import { Check, Zap, Shield, Star, Crown, ArrowRight, ArrowLeft, Loader2, Globe, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 interface PricingViewProps {
@@ -526,7 +526,7 @@ export function PricingView({ onBack, isActivated }: PricingViewProps) {
         <Button 
           variant="outline" 
           className="rounded-xl font-bold text-xs h-11 px-6 border-slate-300 dark:border-slate-700"
-          onClick={() => window.open('mailto:sales@mediapp.store', '_blank')}
+          onClick={() => openExternalUrl('mailto:sales@mediapp.store')}
         >
           Contact Sales
         </Button>

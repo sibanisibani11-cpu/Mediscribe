@@ -1,25 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Minus, X, Maximize2, Minimize2, Info, Crown, LayoutTemplate, Sparkles } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useState, useEffect } from "react";
+import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, X, Maximize2, Minimize2, Info, Crown, LayoutTemplate, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { SplashScreen } from '@/components/splash-screen';
 import { AuthPage } from "@/components/auth-page";
-import { ActivationPage } from "@/components/activation-page";
 import { LandingPage } from "@/components/landing-page";
-import { DictationView } from "@/components/dictation-view";
-import { KeywordView } from "@/components/keyword-view";
-import { DictionaryManager } from "@/components/dictionary-manager";
-import { UploadView } from "@/components/upload-view";
-import { InstructionsView } from "@/components/instructions-view";
-import { PricingView } from "@/components/pricing-view";
-import { TemplateManager } from "@/components/template-manager";
-import { TemplateView } from "@/components/template-view";
+const DictationView = dynamic(() => import("@/components/dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
+const KeywordView = dynamic(() => import("@/components/keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
+const DictionaryManager = dynamic(() => import("@/components/dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
+const UploadView = dynamic(() => import("@/components/upload-view").then((mod) => mod.UploadView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading upload tools…</div> });
+const InstructionsView = dynamic(() => import("@/components/instructions-view").then((mod) => mod.InstructionsView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading instructions…</div> });
+const PricingView = dynamic(() => import("@/components/pricing-view").then((mod) => mod.PricingView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading pricing…</div> });
+const TemplateView = dynamic(() => import("@/components/template-view").then((mod) => mod.TemplateView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading report templates…</div> });
 
 type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'upload' | 'instructions' | 'pricing' | 'templates';
 
@@ -42,7 +41,6 @@ export function MediScribeApp() {
   const EXPIRATION_DATE = new Date('2026-04-01'); // Expires after 31st March (i.e., on April 1st)
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
-  const isMac = isElectron && (window.electron as any).platform === 'darwin';
 
   const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true';
 
@@ -154,18 +152,6 @@ export function MediScribeApp() {
     }
   };
 
-  const handleMinimize = () => {
-    if (isElectron) {
-      (window.electron as any).minimizeWindow();
-    }
-  };
-
-  const handleQuit = () => {
-    if (isElectron) {
-      (window.electron as any).quitApp();
-    }
-  };
-
   const handleToggleFullScreen = async () => {
     if (isElectron) {
       const result = await (window.electron as any).toggleFullScreen();
@@ -268,7 +254,7 @@ export function MediScribeApp() {
             </Button>
 
             <Button
-              onClick={() => window.open('https://mediapp.store', '_blank')}
+              onClick={() => openExternalUrl('https://mediapp.store')}
               variant="outline"
               className="w-full h-14 border-white/10 bg-white/5 hover:bg-white/10 text-white font-bold text-lg rounded-2xl transition-all"
             >

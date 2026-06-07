@@ -1,7 +1,7 @@
 "use client";
 
 import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, HelpCircle, Crown, LayoutTemplate } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, openExternalUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -148,7 +148,7 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
                 {/* CTA */}
                 <Button
                   className="shrink-0 h-12 px-8 cobalt-gradient hover:opacity-90 text-white font-bold rounded-2xl shadow-xl transition-all flex items-center gap-2 group/btn"
-                  onClick={() => window.open(updateUrl || 'https://mediapp.store', '_blank')}
+                  onClick={() => openExternalUrl(updateUrl || 'https://mediapp.store')}
                 >
                   Download Now
                   <ArrowRight className="h-4 w-4 group-hover/btn:translate-x-1 transition-transform" />

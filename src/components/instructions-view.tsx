@@ -2,6 +2,7 @@ import { BookOpen, Download, MousePointer, Keyboard, Mic, Settings, Play, Info, 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { openExternalUrl } from "@/lib/utils";
 
 interface InstructionsViewProps {
   onBack: () => void;
@@ -286,7 +287,7 @@ export function InstructionsView({ onBack }: InstructionsViewProps) {
 
                 <div className="mt-4 pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                   <div className="text-[10px] text-slate-500 font-black uppercase italic tracking-tighter">MediScribe v1.0.4</div>
-                  <Button variant="link" onClick={() => window.open('https://mediapp.store/help', '_blank')} className="text-[10px] p-0 font-black uppercase tracking-widest text-violet-600">
+                  <Button variant="link" onClick={() => openExternalUrl('https://mediapp.store/help')} className="text-[10px] p-0 font-black uppercase tracking-widest text-violet-600">
                     Visit Online Help Center
                   </Button>
                 </div>

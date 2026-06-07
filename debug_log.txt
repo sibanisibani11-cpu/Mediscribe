@@ -19,3 +19,7 @@
 [2026-05-22T19:06:18.199Z] [PIPELINE DEBUG] Ollama Enabled: true
 [2026-05-22T19:06:18.199Z] [PIPELINE DEBUG] Stage 1 (ASR/Cleanup) Result: "" (Length: 0)
 [2026-05-22T19:06:18.199Z] [PIPELINE DEBUG] Text too short for Post-Processing. Skipping Stages 2 & 3.
+[2026-06-02T11:44:42.165Z] [PIPELINE DEBUG] Starting Transcription Pipeline...
+[2026-06-02T11:44:42.166Z] [PIPELINE DEBUG] Ollama Enabled: true
+[2026-06-02T11:44:42.166Z] [PIPELINE DEBUG] Stage 1 (ASR/Cleanup) Result: "" (Length: 0)
+[2026-06-02T11:44:42.166Z] [PIPELINE DEBUG] Text too short for Post-Processing. Skipping Stages 2 & 3.

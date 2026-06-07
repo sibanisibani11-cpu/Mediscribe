@@ -85,11 +85,12 @@ jobs:
       - name: Rebuild native modules
         run: npx electron-builder install-app-deps
 
-      # ── 6. Bundle binaries ────────────────────────────────────────────────
+      # ── 6. Bundle binaries (skip icon generation, already done above) ─────
       - name: Bundle Models and Binaries
         run: npm run prebuild
         env:
           TARGET_PLATFORM: ${{ matrix.target_platform }}
+          SKIP_ICON_GENERATION: "true"
 
       # ── 7. Build Next.js ──────────────────────────────────────────────────
       - name: Build Next.js App

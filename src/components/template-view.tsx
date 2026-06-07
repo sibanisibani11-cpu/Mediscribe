@@ -111,16 +111,18 @@ export function TemplateView({ isElectron, onBack, autoStart = false, onAutoStar
   };
 
   const handlePermissionConfirm = async () => {
+    const electron = (window as any)?.electron;
+
     if (!isPermissionRequested) {
       setIsPermissionRequested(true);
       // Trigger macOS default permission prompt (only pops up once if never allowed/denied)
-      await (window.electron as any).requestAccessibilityPermission?.();
+      await electron?.requestAccessibilityPermission?.();
       // Directly open System Settings to Accessibility panel so user can turn on the switch
-      await (window.electron as any).openAccessibilitySettings?.();
+      await electron?.openAccessibilitySettings?.();
     } else {
       // Users clicked "Continue" after we opened Settings for them
-      if (isElectron && (window.electron as any).checkAccessibilityPermission) {
-        const isGranted = await (window.electron as any).checkAccessibilityPermission();
+      if (isElectron && electron?.checkAccessibilityPermission) {
+        const isGranted = await electron.checkAccessibilityPermission();
         if (isGranted) {
           setShowPermissionDialog(false);
           localStorage.setItem(accessibilityPromptKey, 'true');
