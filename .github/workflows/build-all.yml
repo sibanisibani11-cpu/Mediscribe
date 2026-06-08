@@ -79,7 +79,7 @@ jobs:
 
       # ── 4. Install dependencies ───────────────────────────────────────────
       - name: Install Dependencies
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --include=dev
 
       # ── 5. Rebuild native modules for the current platform ─────────────────
       - name: Rebuild native modules
