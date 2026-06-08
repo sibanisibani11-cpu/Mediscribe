@@ -1,4 +1,4 @@
-name: Build Microsoft Store (AppX)
+name: Build Windows (AppX + Installers)
 
 on:
   workflow_dispatch:
@@ -27,6 +27,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build Windows installers (NSIS + portable)
+        run: npx electron-builder --win nsis portable --x64 --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload AppX artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -34,5 +39,16 @@ jobs:
           path: |
             dist-electron/*.appx
             dist-electron/*.appxupload
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Windows installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediscribe-windows-installers
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+            dist-electron/latest.yml
           if-no-files-found: error
           retention-days: 14
