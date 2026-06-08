@@ -1,7 +1,7 @@
 "use client";
 
-import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, HelpCircle, Crown, LayoutTemplate } from "lucide-react";
-import { cn, openExternalUrl } from "@/lib/utils";
+import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
+import { openExternalUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -81,7 +81,7 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
           description: "Your dictionary and keywords are now protected in Google Drive.",
         });
       }
-    } catch (err) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Connection Failed",

@@ -13,8 +13,7 @@ interface ActivationPageProps {
 export function ActivationPage({ onActivated }: ActivationPageProps) {
     const [isLoading, setIsLoading] = useState(false);
     const [activationKey, setActivationKey] = useState("");
-    const [activationId, setActivationID] = useState("");
-    const [copied, setCopied] = useState(false);
+    const [, setActivationID] = useState("");
     const { toast } = useToast();
 
     useEffect(() => {
@@ -48,15 +47,6 @@ export function ActivationPage({ onActivated }: ActivationPageProps) {
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const copyId = () => {
-        navigator.clipboard.writeText(activationId);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-        toast({
-            description: "Hardware ID copied to clipboard",
-        });
     };
 
     return (

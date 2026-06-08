@@ -298,7 +298,7 @@ export function DictationView({ isElectron }: DictationViewProps) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try {
           mediaRecorderRef.current.stop();
-        } catch (err) { }
+        } catch { }
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
         stopTracks(mediaRecorderRef.current.stream);

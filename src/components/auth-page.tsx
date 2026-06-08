@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Loader2, Mail, Lock, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface AuthPageProps {
@@ -43,7 +42,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
             });
 
             onLogin(email);
-        } catch (error) {
+        } catch {
             toast({
                 variant: "destructive",
                 title: "Auth Error",

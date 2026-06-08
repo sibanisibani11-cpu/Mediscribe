@@ -237,7 +237,6 @@
       "format": "UDZO",
       "title": "MediScribe ${version}",
       "icon": "icon.png",
-      "background": "build/background.png",
       "contents": [
         {
           "x": 110,

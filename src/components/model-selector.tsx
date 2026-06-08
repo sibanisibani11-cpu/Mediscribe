@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown, Download, Loader2, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, Download, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 interface Model {
@@ -80,7 +79,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         title: "Server Ready",
         description: "Whisper server has been restarted successfully.",
       });
-    } catch (error) {
+    } catch {
       toast({
         variant: "destructive",
         title: "Restart Failed",

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Plus, Trash2, Copy, Edit3, Check, X, FileText, Search,
+  Plus, Trash2, Edit3, Check, X, FileText, Search,
   Tag, ChevronDown, Upload, FolderOpen, FileIcon, Type
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,7 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const electron = typeof window !== "undefined" ? (window as any).electron : null;
+  const electron = useMemo(() => typeof window !== "undefined" ? (window as any).electron : null, []);
 
   useEffect(() => {
     if (electron?.getTemplates) {
@@ -88,7 +88,7 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
     } else {
       setTemplates(loadLocalTemplates());
     }
-  }, []);
+  }, [electron]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {

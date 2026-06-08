@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import {
-    X, Sparkles, CheckCircle2, Monitor,
-    MousePointer2, Zap, ArrowRight, Smartphone
+    X, Sparkles, Monitor,
+    MousePointer2, Zap, ArrowRight
 } from "lucide-react";
 import {
-    Dialog, DialogContent, DialogHeader,
-    DialogTitle, DialogDescription, DialogFooter
+    Dialog, DialogContent,
+    DialogTitle, DialogDescription
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 

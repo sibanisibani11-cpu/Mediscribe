@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Zap, Shield, Star, Crown, ArrowRight, ArrowLeft, Loader2, Globe, Tag, X } from "lucide-react";
+import { Check, Shield, Star, Crown, ArrowRight, ArrowLeft, Loader2, Globe, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { cn, openExternalUrl } from "@/lib/utils";
