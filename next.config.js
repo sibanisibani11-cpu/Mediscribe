@@ -1,7 +1,10 @@
-import type { NextConfig } from 'next';
-import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
+// @ts-check
+const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
 
-const nextConfig = (phase: string): NextConfig => {
+/** @param {string} phase
+ *  @returns {import('next').NextConfig}
+ */
+const nextConfig = (phase) => {
   const isDev = phase === PHASE_DEVELOPMENT_SERVER;
 
   return {
@@ -66,7 +69,7 @@ const nextConfig = (phase: string): NextConfig => {
           pathname: '/**',
         },
         {
-          protocol: 'https' as const,
+          protocol: 'https',
           hostname: 'picsum.photos',
           port: '',
           pathname: '/**',
@@ -76,4 +79,4 @@ const nextConfig = (phase: string): NextConfig => {
   };
 };
 
-export default nextConfig;
+module.exports = nextConfig;

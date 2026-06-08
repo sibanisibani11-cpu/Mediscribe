@@ -1,0 +1,38 @@
+name: Build Microsoft Store (AppX)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-appx:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AppX packages (x64 + arm64)
+        run: npx electron-builder --win appx --x64 --arm64 --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload AppX artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediscribe-appx
+          path: |
+            dist-electron/*.appx
+            dist-electron/*.appxupload
+          if-no-files-found: error
+          retention-days: 14
