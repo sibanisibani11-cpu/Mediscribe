@@ -69,21 +69,42 @@ async function bundleOllama() {
             continue;
         }
 
+        const extractedDir = path.join(TEMP_DIR, 'extracted');
+        if (!fs.existsSync(extractedDir)) {
+            fs.mkdirSync(extractedDir, { recursive: true });
+        }
+
         console.log('📂 Extracting...');
         try {
             if (platform === 'darwin') {
-                // macOS: Extract the binary from the .app bundle
-                // The binary is at Ollama.app/Contents/Resources/ollama
-                execSync(`unzip -o -j "${archivePath}" "Ollama.app/Contents/Resources/ollama" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
-                execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
+                // macOS: Extract using tar, then copy binary from .app bundle
+                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+                const src = path.join(extractedDir, 'Ollama.app', 'Contents', 'Resources', 'ollama');
+                if (fs.existsSync(src)) {
+                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama'));
+                    execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
+                } else {
+                    console.warn('⚠️  Could not find ollama binary in extracted archive');
+                }
             } else if (platform === 'win32') {
-                // Windows: ollama-windows-amd64.zip contains ollama.exe at the root
-                execSync(`unzip -o -j "${archivePath}" "ollama.exe" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
+                // Windows: Extract using tar (built-in on Windows 10+)
+                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+                const src = path.join(extractedDir, 'ollama.exe');
+                if (fs.existsSync(src)) {
+                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama.exe'));
+                } else {
+                    console.warn('⚠️  Could not find ollama.exe in extracted archive');
+                }
             } else if (platform === 'linux') {
                 // Linux: Extract ollama binary from tgz
-                // The ollama-linux-amd64.tgz has a single 'bin/ollama' file
-                execSync(`tar -xzf "${archivePath}" -C "${RESOURCES_DIR}" bin/ollama --strip-components=1`, { stdio: 'inherit' });
-                execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
+                execSync(`tar -xzf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+                const src = path.join(extractedDir, 'bin', 'ollama');
+                if (fs.existsSync(src)) {
+                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama'));
+                    execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
+                } else {
+                    console.warn('⚠️  Could not find ollama binary in extracted archive');
+                }
             }
 
             console.log(`✅ Ollama for ${platform} bundled successfully to ${RESOURCES_DIR}`);

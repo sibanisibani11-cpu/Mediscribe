@@ -90,23 +90,39 @@ async function bundleWhisper() {
             continue;
         }
 
+        const extractedDir = path.join(TEMP_DIR, 'extracted');
+        if (!fs.existsSync(extractedDir)) {
+            fs.mkdirSync(extractedDir, { recursive: true });
+        }
+
+        try {
+            // Extract using tar (built-in on Windows 10+, macOS, Linux)
+            execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+        } catch (e) {
+            console.error(`❌ Extraction failed for ${platform}:`, e.message);
+            removeDirSync(TEMP_DIR);
+            continue;
+        }
+
         try {
             if (platform === 'win32') {
-                // Extract whisper-server.exe and required DLLs
-                const filesToExtract = [
-                    'Release/whisper-server.exe',
-                    'Release/ggml.dll',
-                    'Release/ggml-base.dll',
-                    'Release/ggml-cpu.dll',
-                    'Release/whisper.dll',
-                    'Release/SDL2.dll'
+                // Copy whisper-server.exe and required DLLs from Release/
+                const filesToCopy = [
+                    { from: 'Release/whisper-server.exe', to: 'whisper-server.exe' },
+                    { from: 'Release/ggml.dll', to: 'ggml.dll' },
+                    { from: 'Release/ggml-base.dll', to: 'ggml-base.dll' },
+                    { from: 'Release/ggml-cpu.dll', to: 'ggml-cpu.dll' },
+                    { from: 'Release/whisper.dll', to: 'whisper.dll' },
+                    { from: 'Release/SDL2.dll', to: 'SDL2.dll' }
                 ];
 
-                for (const file of filesToExtract) {
-                    try {
-                        execSync(`unzip -o -j "${archivePath}" "${file}" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
-                    } catch (err) {
-                        console.warn(`⚠️  Could not extract ${file}: ${err.message}`);
+                for (const { from, to } of filesToCopy) {
+                    const src = path.join(extractedDir, from);
+                    const dst = path.join(RESOURCES_DIR, to);
+                    if (fs.existsSync(src)) {
+                        fs.copyFileSync(src, dst);
+                    } else {
+                        console.warn(`⚠️  Could not find ${from} in extracted archive`);
                     }
                 }
 
@@ -117,18 +133,16 @@ async function bundleWhisper() {
                     console.log(`   whisper-server.exe size: ${(size / 1024).toFixed(0)} KB`);
                     if (size < 200000) {
                         console.warn('⚠️  whisper-server.exe seems too small - check the archive contents.');
-                        execSync(`unzip -l "${archivePath}"`, { stdio: 'inherit' });
                     }
                 }
             } else if (platform === 'linux') {
-                // Linux: Extract whisper-server
-                try {
-                    execSync(`unzip -o -j "${archivePath}" "whisper-server" -d "${RESOURCES_DIR}"`, { stdio: 'inherit' });
+                // Linux: find whisper-server in extracted directory
+                const findResult = execSync(`find "${extractedDir}" -name "whisper-server" -type f`).toString().trim();
+                if (findResult) {
+                    fs.copyFileSync(findResult, path.join(RESOURCES_DIR, 'whisper-server'));
                     execSync(`chmod +x "${path.join(RESOURCES_DIR, 'whisper-server')}"`);
-                } catch (err) {
-                    console.warn(`⚠️  Could not extract whisper-server from ${archiveName}: ${err.message}`);
-                    console.log('Listing files in zip:');
-                    execSync(`unzip -l "${archivePath}"`);
+                } else {
+                    console.warn(`⚠️  Could not find whisper-server in ${archiveName}`);
                 }
             }
             console.log(`✅ Whisper Server for ${platform} bundled successfully to ${RESOURCES_DIR}`);

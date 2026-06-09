@@ -34,10 +34,17 @@ try {
     console.warn('[Updater] electron-updater not available:', err.message);
 }
 
+// Detect if running as a Windows Store (AppX/MSIX) package — auto-updates must go through the Store
+const isWindowsStore = process.platform === 'win32' && !!process.windowsStore;
+
 function setupAutoUpdater(win) {
     if (!autoUpdater || !win) return;
     if (isDev) {
         console.log('[Updater] Skipping auto-update in dev mode.');
+        return;
+    }
+    if (isWindowsStore) {
+        console.log('[Updater] Skipping auto-update in Windows Store build.');
         return;
     }
 
@@ -97,6 +104,7 @@ function setupAutoUpdater(win) {
 
 ipcMain.handle('check-for-updates', () => {
     if (!autoUpdater || isDev) return { status: 'dev-mode' };
+    if (isWindowsStore) return { status: 'store-mode' };
     autoUpdater.checkForUpdates().catch(console.error);
     return { status: 'checking' };
 });
@@ -214,8 +222,19 @@ function getMachineId() {
             const stdout = execSync("ioreg -rd1 -c IOPlatformExpertDevice | awk '/IOPlatformUUID/ { print $3 }'").toString();
             return stdout.replace(/"/g, '').trim();
         } else if (process.platform === 'win32') {
-            const stdout = execSync('wmic csproduct get uuid').toString();
-            return stdout.split('\n')[1].trim();
+            try {
+                const stdout = execSync('powershell -Command "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"', { timeout: 5000 }).toString();
+                const uuid = stdout.trim();
+                if (uuid && uuid.length > 5) return uuid;
+            } catch (e) {
+                // Fallback: try wmic for older Windows versions
+                try {
+                    const stdout = execSync('wmic csproduct get uuid', { timeout: 5000 }).toString();
+                    return stdout.split('\n')[1].trim();
+                } catch (e2) {
+                    safeError('HWID Error (wmic fallback):', e2);
+                }
+            }
         }
     } catch (e) {
         safeError('HWID Error:', e);
