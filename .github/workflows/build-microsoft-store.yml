@@ -7,8 +7,10 @@ on:
       - "v*"
 
 jobs:
-  build-appx:
+  build-windows:
     runs-on: windows-latest
+    env:
+      HAS_STORE_CREDS: ${{ secrets.PC_CLIENT_ID != '' && secrets.PC_CLIENT_SECRET != '' && secrets.PC_TENANT_ID != '' && secrets.PC_STORE_ID != '' }}
 
     steps:
       - name: Checkout repository
@@ -20,16 +22,12 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci --include=dev
+        run: npm ci
 
-      - name: Debug: list installed packages
-        run: |
-          echo "npm list typescript (root)"
-          npm list typescript --depth=0 || true
-          echo "ls node_modules for typescript and @types/node"
-          dir node_modules  || true
-          echo "check typescript path"
-          node -e "try{console.log(require.resolve('typescript'))}catch(e){console.error('typescript not resolvable')}; process.exit(0)"
+      - name: Build application and bundle resources
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build AppX packages (x64 + arm64)
         run: npx electron-builder --win appx --x64 --arm64 --publish=never
@@ -63,7 +61,7 @@ jobs:
           retention-days: 14
 
       - name: Publish to Microsoft Store
-        if: ${{ secrets.PC_CLIENT_ID && secrets.PC_CLIENT_SECRET && secrets.PC_TENANT_ID && secrets.PC_STORE_ID }}
+        if: env.HAS_STORE_CREDS == 'true'
         env:
           PC_CLIENT_ID: ${{ secrets.PC_CLIENT_ID }}
           PC_CLIENT_SECRET: ${{ secrets.PC_CLIENT_SECRET }}
