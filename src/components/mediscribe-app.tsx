@@ -3,11 +3,11 @@
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
 import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, X, Maximize2, Minimize2, Info, Crown, LayoutTemplate, Sparkles } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { cn, openExternalUrl } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { useToast } from "../hooks/use-toast";
+import { cn, openExternalUrl } from "../lib/utils";
 import { useTheme } from "next-themes";
 import { SplashScreen } from '@/components/splash-screen';
 import { AuthPage } from "@/components/auth-page";
