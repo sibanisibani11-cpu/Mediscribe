@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Book, Loader2, SortAsc, Check, X, Edit2, Cloud, RefreshCw, ChevronDown, CloudUpload, CloudDownload } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "./ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 // Types moved to inline or not used
-import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
-import { SyncConfirmDialog } from "@/components/common/sync-confirm-dialog";
+import { useToast } from "../hooks/use-toast";
+import { cn } from "../lib/utils";
+import { SyncConfirmDialog } from "./common/sync-confirm-dialog";
 
 export function DictionaryManager() {
     const [dictionary, setDictionary] = useState<string[]>([]);

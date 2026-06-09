@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { RefreshCw, Server } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "./ui/button";
 
 type ServerStatus = 'stopped' | 'starting' | 'ready' | 'error';
 

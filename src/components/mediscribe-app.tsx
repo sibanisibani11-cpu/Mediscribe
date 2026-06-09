@@ -9,16 +9,16 @@ import { Button } from "./ui/button";
 import { useToast } from "../hooks/use-toast";
 import { cn, openExternalUrl } from "../lib/utils";
 import { useTheme } from "next-themes";
-import { SplashScreen } from '@/components/splash-screen';
-import { AuthPage } from "@/components/auth-page";
-import { LandingPage } from "@/components/landing-page";
-const DictationView = dynamic(() => import("@/components/dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
-const KeywordView = dynamic(() => import("@/components/keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
-const DictionaryManager = dynamic(() => import("@/components/dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
-const UploadView = dynamic(() => import("@/components/upload-view").then((mod) => mod.UploadView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading upload tools…</div> });
-const InstructionsView = dynamic(() => import("@/components/instructions-view").then((mod) => mod.InstructionsView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading instructions…</div> });
-const PricingView = dynamic(() => import("@/components/pricing-view").then((mod) => mod.PricingView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading pricing…</div> });
-const TemplateView = dynamic(() => import("@/components/template-view").then((mod) => mod.TemplateView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading report templates…</div> });
+import { SplashScreen } from './splash-screen';
+import { AuthPage } from "./auth-page";
+import { LandingPage } from "./landing-page";
+const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
+const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
+const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
+const UploadView = dynamic(() => import("./upload-view").then((mod) => mod.UploadView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading upload tools…</div> });
+const InstructionsView = dynamic(() => import("./instructions-view").then((mod) => mod.InstructionsView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading instructions…</div> });
+const PricingView = dynamic(() => import("./pricing-view").then((mod) => mod.PricingView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading pricing…</div> });
+const TemplateView = dynamic(() => import("./template-view").then((mod) => mod.TemplateView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading report templates…</div> });
 
 type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'upload' | 'instructions' | 'pricing' | 'templates';
 

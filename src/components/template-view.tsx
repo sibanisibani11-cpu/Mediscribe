@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { FileText, Play, Minimize2, KeyRound, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ToastAction } from "@/components/ui/toast";
-import { TemplateManager } from "@/components/template-manager";
+import { Button } from "./ui/button";
+import { useToast } from "../hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { ToastAction } from "./ui/toast";
+import { TemplateManager } from "./template-manager";
 
 interface TemplateViewProps {
   isElectron: boolean;

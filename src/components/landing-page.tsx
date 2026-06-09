@@ -1,10 +1,10 @@
 "use client";
 
 import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
-import { openExternalUrl } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { openExternalUrl } from "../lib/utils";
+import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "../hooks/use-toast";
 import { WhatsNewModal } from "./whats-new-modal";
 
 interface LandingPageProps {

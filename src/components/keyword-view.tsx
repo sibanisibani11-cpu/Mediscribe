@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Keyboard, ArrowLeft, Play, Minimize2, Cloud, RefreshCw, ChevronDown, CloudUpload, CloudDownload, ShieldCheck, KeyRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { KeywordLibraryManager } from "@/components/keyword-library-manager";
-import { useToast } from "@/hooks/use-toast";
-import { SyncConfirmDialog } from "@/components/common/sync-confirm-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ToastAction } from "@/components/ui/toast";
+import { Button } from "./ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { KeywordLibraryManager } from "./keyword-library-manager";
+import { useToast } from "../hooks/use-toast";
+import { SyncConfirmDialog } from "./common/sync-confirm-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
+import { ToastAction } from "./ui/toast";
 
 interface KeywordViewProps {
   isElectron: boolean;

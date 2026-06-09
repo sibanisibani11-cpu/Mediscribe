@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { Check, ChevronsUpDown, Download, Loader2, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -13,7 +13,7 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "./ui/alert-dialog";
 import {
     Command,
     CommandEmpty,
@@ -21,13 +21,13 @@ import {
     CommandInput,
     CommandItem,
     CommandList,
-} from "@/components/ui/command";
+} from "./ui/command";
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
-} from "@/components/ui/popover";
-import { useToast } from "@/hooks/use-toast";
+} from "./ui/popover";
+import { useToast } from "../hooks/use-toast";
 
 interface OllamaModel {
     name: string;

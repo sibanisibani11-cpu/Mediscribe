@@ -1,8 +1,8 @@
 import { BookOpen, Download, MousePointer, Keyboard, Mic, Play, Info, CheckCircle2, AlertCircle, Cloud, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { openExternalUrl } from "@/lib/utils";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { openExternalUrl } from "../lib/utils";
 
 interface InstructionsViewProps {
   onBack: () => void;

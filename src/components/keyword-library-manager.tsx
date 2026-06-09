@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Trash2, BookOpen, Loader2, SortAsc, Check, X, Edit2, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
+import { useToast } from "../hooks/use-toast";
+import { cn } from "../lib/utils";
 
 export interface KeywordEntry {
     id: string;

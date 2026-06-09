@@ -1,0 +1,54 @@
+name: Build Windows AppX
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build-windows:
+    name: Build AppX (${{ matrix.arch }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web app (Next.js)
+        run: npm run build
+
+      - name: Package Electron app (AppX)
+        run: npx electron-builder --win --${{ matrix.arch }} --publish=never
+
+      - name: Upload AppX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediScribe-AppX-${{ matrix.arch }}
+          path: dist-electron/*.appx
+
+      - name: Publish to Microsoft Store
+        if: ${{ secrets.PC_CLIENT_ID && secrets.PC_CLIENT_SECRET && secrets.PC_TENANT_ID && secrets.PC_STORE_ID }}
+        shell: bash
+        env:
+          PC_TENANT_ID: ${{ secrets.PC_TENANT_ID }}
+          PC_CLIENT_ID: ${{ secrets.PC_CLIENT_ID }}
+          PC_CLIENT_SECRET: ${{ secrets.PC_CLIENT_SECRET }}
+          PC_STORE_ID: ${{ secrets.PC_STORE_ID }}
+        run: |
+          APPX=$(ls dist-electron/*.appx | head -n1)
+          echo "Using AppX: $APPX"
+          node scripts/publish-msstore.js "$APPX"

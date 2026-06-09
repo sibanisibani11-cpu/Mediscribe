@@ -2,12 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, Loader2, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-import { ModelSelector } from "@/components/model-selector";
-import { OllamaSelector } from "@/components/ollama-selector";
-import { WhisperServerStatus } from "@/components/whisper-server-status";
+import { Button } from "./ui/button";
+import { Label } from "./ui/label";
+import { useToast } from "../hooks/use-toast";
+import { ModelSelector } from "./model-selector";
+import { OllamaSelector } from "./ollama-selector";
+import { WhisperServerStatus } from "./whisper-server-status";
 
 type RecordingState = "idle" | "recording" | "transcribing" | "done";
 

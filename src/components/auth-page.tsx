@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Button } from "./ui/button";
+import { Label } from "./ui/label";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { useToast } from "../hooks/use-toast";
 
 interface AuthPageProps {
     onLogin: (user: string) => void;

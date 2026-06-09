@@ -5,9 +5,9 @@ import {
   Plus, Trash2, Edit3, Check, X, FileText, Search,
   Tag, ChevronDown, Upload, FolderOpen, FileIcon, Type
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { Button } from "./ui/button";
+import { useToast } from "../hooks/use-toast";
+import { cn } from "../lib/utils";
 
 interface Template {
   id: string;

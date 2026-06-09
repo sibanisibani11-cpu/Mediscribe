@@ -2,11 +2,11 @@
 
 import { useState, useRef, useCallback } from "react";
 import { Upload, FileAudio, Loader2, CheckCircle2, XCircle, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
-import { ModelSelector } from "@/components/model-selector";
-import { OllamaSelector } from "@/components/ollama-selector";
+import { Button } from "./ui/button";
+import { Label } from "./ui/label";
+import { useToast } from "../hooks/use-toast";
+import { ModelSelector } from "./model-selector";
+import { OllamaSelector } from "./ollama-selector";
 
 interface UploadViewProps {
   isElectron: boolean;
