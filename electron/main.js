@@ -183,6 +183,29 @@ function safeError(...args) {
 
 // Security & Licensing
 let licensePath;
+
+// Ensure we have a stable, writable debug log location (use userData, not app path)
+const DEBUG_LOG_PATH = path.join(app.getPath ? app.getPath('userData') : os.tmpdir(), 'debug_log.txt');
+
+// Global uncaught exception handler to avoid crashes during certification tests
+process.on('uncaughtException', (err) => {
+    try {
+        const msg = `[uncaughtException] ${new Date().toISOString()} ${err && err.stack ? err.stack : String(err)}\n`;
+        fs.appendFileSync(DEBUG_LOG_PATH, msg);
+    } catch (e) {
+        // best-effort only
+        console.error('Failed to write uncaughtException to debug log:', e && e.message ? e.message : e);
+    }
+    console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+    try {
+        const msg = `[unhandledRejection] ${new Date().toISOString()} ${reason && reason.stack ? reason.stack : String(reason)}\n`;
+        fs.appendFileSync(DEBUG_LOG_PATH, msg);
+    } catch (e) { }
+    console.error('Unhandled Rejection:', reason);
+});
 const SECRET_SALT = 'MediScribe_Secure_Auth_2025_v1';
 
 function getMachineId() {
@@ -2523,7 +2546,8 @@ function startServerWithModel(serverPath, modelPath) {
         });
 
         whisperServerProcess.on('error', (err) => {
-            console.error('[Whisper Server] Failed to start:', err);
+              console.error('[Whisper Server] Failed to start:', err);
+              try { fs.appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] [Whisper Server] Failed to start: ${err && err.stack ? err.stack : String(err)}\n`); } catch (e) { }
             setWhisperServerStatus('error');
             whisperServerProcess = null;
         });
@@ -2573,8 +2597,9 @@ function startServerWithModel(serverPath, modelPath) {
         }, 2000);
 
     } catch (error) {
-        console.error('[MediScribe] Failed to spawn Whisper server:', error);
-        whisperServerProcess = null;
+           console.error('[MediScribe] Failed to spawn Whisper server:', error);
+           try { fs.appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] [MediScribe] Failed to spawn Whisper server: ${error && error.stack ? error.stack : String(error)}\n`); } catch (e) { }
+           whisperServerProcess = null;
     }
 }
 
@@ -4595,7 +4620,8 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
             if (fs.existsSync(tempWavPath)) fs.unlinkSync(tempWavPath);
 
             // ===== 3-STAGE PIPELINE =====
-            const logFile = path.join(app.getAppPath(), 'debug_log.txt');
+            // Use a writable debug log in the user's data directory to avoid write failures
+            const logFile = DEBUG_LOG_PATH;
             const logToFile = (msg) => {
                 try { fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`); } catch (e) { }
             };

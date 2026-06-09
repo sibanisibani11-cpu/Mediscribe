@@ -52,3 +52,21 @@ jobs:
             dist-electron/latest.yml
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish to Microsoft Store
+        if: ${{ secrets.PC_CLIENT_ID && secrets.PC_CLIENT_SECRET && secrets.PC_TENANT_ID && secrets.PC_STORE_ID }}
+        env:
+          PC_CLIENT_ID: ${{ secrets.PC_CLIENT_ID }}
+          PC_CLIENT_SECRET: ${{ secrets.PC_CLIENT_SECRET }}
+          PC_TENANT_ID: ${{ secrets.PC_TENANT_ID }}
+          PC_STORE_ID: ${{ secrets.PC_STORE_ID }}
+        run: |
+          Write-Host "Locating .appx in dist-electron..."
+          $appx = Get-ChildItem "dist-electron\*.appx" | Select-Object -First 1 | ForEach-Object { $_.FullName }
+          if (-not $appx) {
+            Write-Error "No .appx found in dist-electron/ — skipping publish."
+            exit 1
+          }
+          Write-Host "Using AppX: $appx"
+          node scripts/publish-msstore.js "$appx"
+        shell: pwsh
