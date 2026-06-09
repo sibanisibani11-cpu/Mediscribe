@@ -28,6 +28,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
+      - name: Debug: list installed packages
+        run: |
+          echo "npm list typescript (root)"
+          npm list typescript --depth=0 || true
+          echo "ls node_modules for typescript and @types/node"
+          dir node_modules  || true
+          echo "check typescript path"
+          node -e "try{console.log(require.resolve('typescript'))}catch(e){console.error('typescript not resolvable')}; process.exit(0)"
+
       - name: Build web app (Next.js)
         run: npm run build
 

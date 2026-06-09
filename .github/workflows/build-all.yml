@@ -81,6 +81,15 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts --include=dev
 
+      - name: Debug: list installed packages
+        run: |
+          echo "npm list typescript (root)"
+          npm list typescript --depth=0 || true
+          echo "ls node_modules for typescript and @types/node"
+          ls -la node_modules | sed -n '1,120p' || true
+          echo "check typescript path"
+          node -e "try{console.log(require.resolve('typescript'))}catch(e){console.error('typescript not resolvable')}; process.exit(0)"
+
       # ── 5. Build Next.js ──────────────────────────────────────────────────
       - name: Build Next.js App
         run: npm run build
