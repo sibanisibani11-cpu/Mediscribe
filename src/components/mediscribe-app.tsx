@@ -15,12 +15,11 @@ import { LandingPage } from "./landing-page";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
-const UploadView = dynamic(() => import("./upload-view").then((mod) => mod.UploadView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading upload tools…</div> });
 const InstructionsView = dynamic(() => import("./instructions-view").then((mod) => mod.InstructionsView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading instructions…</div> });
 const PricingView = dynamic(() => import("./pricing-view").then((mod) => mod.PricingView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading pricing…</div> });
 const TemplateView = dynamic(() => import("./template-view").then((mod) => mod.TemplateView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading report templates…</div> });
 
-type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'upload' | 'instructions' | 'pricing' | 'templates';
+type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'instructions' | 'pricing' | 'templates';
 
 export function MediScribeApp() {
   const { theme, setTheme } = useTheme();
@@ -501,21 +500,6 @@ export function MediScribeApp() {
           </div>
         )}
 
-        {currentView === 'upload' && (
-          <div className="w-full max-w-sm flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="flex items-center justify-between px-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentView('landing')}
-                className="text-[10px] h-7 px-2 hover:bg-slate-100 dark:hover:bg-slate-800 flex gap-1 items-center"
-              >
-                <ArrowLeft className="h-3 w-3" /> Back
-              </Button>
-            </div>
-            <UploadView isElectron={isElectron} />
-          </div>
-        )}
 
         {currentView === 'dictionary' && (
           <div className="w-full max-w-4xl flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">

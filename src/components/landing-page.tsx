@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, Keyboard, Upload, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
+import { Mic, Keyboard, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
 import { openExternalUrl } from "../lib/utils";
 import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
@@ -8,7 +8,7 @@ import { useToast } from "../hooks/use-toast";
 import { WhatsNewModal } from "./whats-new-modal";
 
 interface LandingPageProps {
-  onSelectMode: (mode: 'dictation' | 'keyword' | 'upload' | 'templates') => void;
+  onSelectMode: (mode: 'dictation' | 'keyword' | 'templates') => void;
   onShowInstructions: () => void;
   onShowPricing: () => void;
 }
@@ -215,7 +215,7 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl">
         {/* Dictation Card */}
         <button
           onClick={() => onSelectMode('dictation')}
@@ -244,23 +244,6 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Keyword</h3>
           <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
             Type shortcuts to insert full medical phrases instantly.
-          </p>
-          <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
-            <ArrowRight className="h-4 w-4 text-violet-600" />
-          </div>
-        </button>
-
-        {/* Upload Card */}
-        <button
-          onClick={() => onSelectMode('upload')}
-          className="group relative flex flex-col items-center p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-violet-50 dark:hover:bg-blue-900/10 transition-all hover:scale-[1.02] hover:shadow-xl focus:outline-none focus:ring-2 focus:ring-violet-500"
-        >
-          <div className="h-20 w-20 rounded-full cobalt-gradient flex items-center justify-center mb-4 shadow-lg group-hover:shadow-violet-500/25 transition-shadow">
-            <Upload className="h-9 w-9 text-white" />
-          </div>
-          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">Upload</h3>
-          <p className="text-xs text-center text-slate-500/80 dark:text-slate-400 font-medium leading-relaxed">
-            Upload audio files and transcribe with AI recognition.
           </p>
           <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity transform translate-x-2 group-hover:translate-x-0">
             <ArrowRight className="h-4 w-4 text-violet-600" />
