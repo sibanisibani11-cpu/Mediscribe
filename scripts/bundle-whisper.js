@@ -96,8 +96,12 @@ async function bundleWhisper() {
         }
 
         try {
-            // Extract using tar (built-in on Windows 10+, macOS, Linux)
-            execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+            // Extract using unzip on Linux host, tar on macOS/Windows host
+            if (process.platform === 'linux') {
+                execSync(`unzip -o "${archivePath}" -d "${extractedDir}"`, { stdio: 'inherit' });
+            } else {
+                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+            }
         } catch (e) {
             console.error(`❌ Extraction failed for ${platform}:`, e.message);
             removeDirSync(TEMP_DIR);
