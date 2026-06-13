@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
-      - name: Debug: list installed packages
+      - name: Debug - list installed packages
         run: |
           echo "npm list typescript (root)"
           npm list typescript --depth=0 || true
