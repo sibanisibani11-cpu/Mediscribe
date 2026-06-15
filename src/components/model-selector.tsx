@@ -302,7 +302,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                   return (
                     <CommandItem
                       key={model.name}
-                      value={model.name}
+                      value={model.name.toLowerCase()}
                       onSelect={() => handleSelect(model.name)}
                       className={cn(
                         "text-xs cursor-pointer outline-none transition-all duration-75 flex items-center justify-start w-full text-left gap-2 py-2.5",
@@ -332,7 +332,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                 return (
                   <CommandItem
                     key={model.name}
-                    value={model.name}
+                    value={model.name.toLowerCase()}
                     onSelect={() => {
                       if (!isDownloading) {
                         handleDownload(model.name);

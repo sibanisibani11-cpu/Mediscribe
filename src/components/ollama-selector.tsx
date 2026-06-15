@@ -330,7 +330,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                         return (
                                             <CommandItem
                                                 key={model.name}
-                                                value={model.name}
+                                                value={model.name.toLowerCase()}
                                                 onSelect={async () => {
                                                     if (onEnabledChange) onEnabledChange(true);
                                                     if (isElectron) await (window.electron as any).toggleOllama(true);
@@ -372,7 +372,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                     return (
                                         <CommandItem
                                             key={model.name}
-                                            value={model.name}
+                                            value={model.name.toLowerCase()}
                                             onSelect={async () => {
                                                 if (onEnabledChange) onEnabledChange(true);
                                                 if (isElectron) await (window.electron as any).toggleOllama(true);
@@ -410,7 +410,15 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                                                 ? "hover:bg-red-500/10 hover:text-red-600 text-slate-400"
                                                                 : "hover:bg-purple-500/10 hover:text-purple-600"
                                                         )}
+                                                        onPointerDown={(e) => {
+                                                            e.stopPropagation();
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.stopPropagation();
+                                                        }}
                                                         onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
                                                             if (isDownloading) {
                                                                 handleCancel(model.name, e);
                                                             } else {
