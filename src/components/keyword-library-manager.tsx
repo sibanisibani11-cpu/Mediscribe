@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { useToast } from "../hooks/use-toast";
 import { cn } from "../lib/utils";
+import { isElectron, isMobile } from "../lib/platform";
 
 export interface KeywordEntry {
     id: string;
@@ -27,12 +28,24 @@ export function KeywordLibraryManager() {
 
     const { toast } = useToast();
 
-    const isElectron = typeof window !== 'undefined' && !!window.electron;
+    const STORAGE_KEY = "mediscribe_keywords";
+
+    const loadLocalKeywords = (): KeywordEntry[] => {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+    };
+
+    const saveLocalKeywords = (k: KeywordEntry[]) => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(k));
+    };
 
     useEffect(() => {
         if (isElectron) {
             fetchKeywords();
         } else {
+            setKeywords(loadLocalKeywords());
             setLoading(false);
         }
     }, [isElectron]);
@@ -55,24 +68,43 @@ export function KeywordLibraryManager() {
 
         setIsAdding(true);
         try {
-            const result = await (window.electron as any).addKeyword({
-                keyword: newKeyword.trim(),
-                description: newDescription.trim()
-            });
+            if (isElectron) {
+                const result = await (window.electron as any).addKeyword({
+                    keyword: newKeyword.trim(),
+                    description: newDescription.trim()
+                });
 
-            if (result.success) {
-                setKeywords(result.keywords);
+                if (result.success) {
+                    setKeywords(result.keywords);
+                    setNewKeyword("");
+                    setNewDescription("");
+                    toast({
+                        title: "Keyword Added",
+                        description: `"${newKeyword}" added to your library.`,
+                    });
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: result.error || "Failed to add keyword.",
+                    });
+                }
+            } else {
+                const next = [
+                    {
+                        id: `kw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                        keyword: newKeyword.trim(),
+                        description: newDescription.trim()
+                    },
+                    ...keywords
+                ];
+                setKeywords(next);
+                saveLocalKeywords(next);
                 setNewKeyword("");
                 setNewDescription("");
                 toast({
                     title: "Keyword Added",
                     description: `"${newKeyword}" added to your library.`,
-                });
-            } else {
-                toast({
-                    variant: "destructive",
-                    title: "Error",
-                    description: result.error || "Failed to add keyword.",
                 });
             }
         } catch (error) {
@@ -89,9 +121,24 @@ export function KeywordLibraryManager() {
 
     const handleRemoveKeyword = async (id: string) => {
         try {
-            const result = await (window.electron as any).removeKeyword(id);
-            if (result.success) {
-                setKeywords(result.keywords);
+            if (isElectron) {
+                const result = await (window.electron as any).removeKeyword(id);
+                if (result.success) {
+                    setKeywords(result.keywords);
+                    setSelectedIds(prev => {
+                        const next = new Set(prev);
+                        next.delete(id);
+                        return next;
+                    });
+                    toast({
+                        title: "Keyword Removed",
+                        description: "Keyword removed from library.",
+                    });
+                }
+            } else {
+                const next = keywords.filter(k => k.id !== id);
+                setKeywords(next);
+                saveLocalKeywords(next);
                 setSelectedIds(prev => {
                     const next = new Set(prev);
                     next.delete(id);
@@ -112,9 +159,20 @@ export function KeywordLibraryManager() {
 
         try {
             const idsToRemove = Array.from(selectedIds);
-            const result = await (window.electron as any).removeKeywords(idsToRemove);
-            if (result.success) {
-                setKeywords(result.keywords);
+            if (isElectron) {
+                const result = await (window.electron as any).removeKeywords(idsToRemove);
+                if (result.success) {
+                    setKeywords(result.keywords);
+                    setSelectedIds(new Set());
+                    toast({
+                        title: "Bulk Deletion Successful",
+                        description: `${idsToRemove.length} keywords removed from library.`,
+                    });
+                }
+            } else {
+                const next = keywords.filter(k => !selectedIds.has(k.id));
+                setKeywords(next);
+                saveLocalKeywords(next);
                 setSelectedIds(new Set());
                 toast({
                     title: "Bulk Deletion Successful",
@@ -148,9 +206,19 @@ export function KeywordLibraryManager() {
 
     const handleSort = async () => {
         try {
-            const result = await (window.electron as any).sortKeywords();
-            if (result.success) {
-                setKeywords(result.keywords);
+            if (isElectron) {
+                const result = await (window.electron as any).sortKeywords();
+                if (result.success) {
+                    setKeywords(result.keywords);
+                    toast({
+                        title: "Sorted",
+                        description: "Keywords sorted alphabetically.",
+                    });
+                }
+            } else {
+                const next = [...keywords].sort((a, b) => a.keyword.localeCompare(b.keyword));
+                setKeywords(next);
+                saveLocalKeywords(next);
                 toast({
                     title: "Sorted",
                     description: "Keywords sorted alphabetically.",
@@ -180,24 +248,35 @@ export function KeywordLibraryManager() {
         }
 
         try {
-            const result = await (window.electron as any).updateKeyword({
-                id: editingId,
-                keyword: editKeyword.trim(),
-                description: editDescription.trim()
-            });
+            if (isElectron) {
+                const result = await (window.electron as any).updateKeyword({
+                    id: editingId,
+                    keyword: editKeyword.trim(),
+                    description: editDescription.trim()
+                });
 
-            if (result.success) {
-                setKeywords(result.keywords);
+                if (result.success) {
+                    setKeywords(result.keywords);
+                    setEditingId(null);
+                    toast({
+                        title: "Keyword Updated",
+                        description: "Keyword entry updated successfully.",
+                    });
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: result.error || "Failed to update keyword.",
+                    });
+                }
+            } else {
+                const next = keywords.map(k => k.id === editingId ? { ...k, keyword: editKeyword.trim(), description: editDescription.trim() } : k);
+                setKeywords(next);
+                saveLocalKeywords(next);
                 setEditingId(null);
                 toast({
                     title: "Keyword Updated",
                     description: "Keyword entry updated successfully.",
-                });
-            } else {
-                toast({
-                    variant: "destructive",
-                    title: "Error",
-                    description: result.error || "Failed to update keyword.",
                 });
             }
         } catch (error) {
@@ -210,7 +289,7 @@ export function KeywordLibraryManager() {
         k.description.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    if (!isElectron) {
+    if (!isElectron && !isMobile) {
         return (
             <div className="p-4 text-center text-muted-foreground text-xs italic">
                 Keyword Library is only available in the desktop app.
@@ -450,7 +529,7 @@ export function KeywordLibraryManager() {
                     <span><strong>{keywords.length}</strong> keyword{keywords.length !== 1 ? 's' : ''} in library</span>
                 </p>
                 <p className="text-xs text-muted-foreground italic">
-                    Type keywords in Word to auto-expand
+                    {isMobile ? "Abbreviations available for copy/view" : "Type keywords in Word to auto-expand"}
                 </p>
             </div>
         </div>

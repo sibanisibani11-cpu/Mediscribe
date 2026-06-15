@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { useToast } from "../hooks/use-toast";
 import { cn } from "../lib/utils";
 import { SyncConfirmDialog } from "./common/sync-confirm-dialog";
+import { isElectron, isMobile } from "../lib/platform";
 
 export function DictionaryManager() {
     const [dictionary, setDictionary] = useState<string[]>([]);
@@ -26,7 +27,18 @@ export function DictionaryManager() {
     });
     const { toast } = useToast();
 
-    const isElectron = typeof window !== 'undefined' && !!window.electron;
+    const STORAGE_KEY = "mediscribe_dictionary";
+
+    const loadLocalDictionary = (): string[] => {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+    };
+
+    const saveLocalDictionary = (d: string[]) => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+    };
 
     useEffect(() => {
         if (isElectron) {
@@ -35,8 +47,8 @@ export function DictionaryManager() {
             (window.electron as any).getGoogleStatus?.().then((res: any) => {
                 setIsDriveConnected(res.connected);
             });
-
         } else {
+            setDictionary(loadLocalDictionary());
             setLoading(false);
         }
     }, [isElectron]);
@@ -124,24 +136,48 @@ export function DictionaryManager() {
 
         setIsAdding(true);
         try {
-            const result = await (window.electron as any).addWord(trimmedInput);
-            if (result.success) {
-                setDictionary(result.dictionary);
-                setNewWord("");
-                const wordMsg = result.addedCount > 1
-                    ? `${result.addedCount} words added`
-                    : `"${trimmedInput}" added`;
+            if (isElectron) {
+                const result = await (window.electron as any).addWord(trimmedInput);
+                if (result.success) {
+                    setDictionary(result.dictionary);
+                    setNewWord("");
+                    const wordMsg = result.addedCount > 1
+                        ? `${result.addedCount} words added`
+                        : `"${trimmedInput}" added`;
 
-                toast({
-                    title: "Success",
-                    description: `${wordMsg} to your custom dictionary.`,
-                });
+                    toast({
+                        title: "Success",
+                        description: `${wordMsg} to your custom dictionary.`,
+                    });
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Info",
+                        description: result.error || "No new words added.",
+                    });
+                }
             } else {
-                toast({
-                    variant: "destructive",
-                    title: "Info",
-                    description: result.error || "No new words added.",
-                });
+                const wordsToAdd = trimmedInput.split(',').map(w => w.trim()).filter(w => w.length > 0);
+                const uniqueNewWords = wordsToAdd.filter(w => !dictionary.includes(w));
+                if (uniqueNewWords.length > 0) {
+                    const next = [...dictionary, ...uniqueNewWords];
+                    setDictionary(next);
+                    saveLocalDictionary(next);
+                    setNewWord("");
+                    const wordMsg = uniqueNewWords.length > 1
+                        ? `${uniqueNewWords.length} words added`
+                        : `"${uniqueNewWords[0]}" added`;
+                    toast({
+                        title: "Success",
+                        description: `${wordMsg} to your custom dictionary.`,
+                    });
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Info",
+                        description: "No new words added (already in dictionary).",
+                    });
+                }
             }
         } catch (error) {
             console.error("Add word error:", error);
@@ -157,9 +193,24 @@ export function DictionaryManager() {
 
     const handleRemoveWord = async (word: string) => {
         try {
-            const result = await (window.electron as any).removeWord(word);
-            if (result.success) {
-                setDictionary(result.dictionary);
+            if (isElectron) {
+                const result = await (window.electron as any).removeWord(word);
+                if (result.success) {
+                    setDictionary(result.dictionary);
+                    setSelectedWords(prev => {
+                        const next = new Set(prev);
+                        next.delete(word);
+                        return next;
+                    });
+                    toast({
+                        title: "Word Removed",
+                        description: `"${word}" removed from dictionary.`,
+                    });
+                }
+            } else {
+                const next = dictionary.filter(w => w !== word);
+                setDictionary(next);
+                saveLocalDictionary(next);
                 setSelectedWords(prev => {
                     const next = new Set(prev);
                     next.delete(word);
@@ -180,9 +231,20 @@ export function DictionaryManager() {
 
         try {
             const wordsToRemove = Array.from(selectedWords);
-            const result = await (window.electron as any).removeWords(wordsToRemove);
-            if (result.success) {
-                setDictionary(result.dictionary);
+            if (isElectron) {
+                const result = await (window.electron as any).removeWords(wordsToRemove);
+                if (result.success) {
+                    setDictionary(result.dictionary);
+                    setSelectedWords(new Set());
+                    toast({
+                        title: "Bulk Deletion Successful",
+                        description: `${wordsToRemove.length} terms removed from dictionary.`,
+                    });
+                }
+            } else {
+                const next = dictionary.filter(w => !selectedWords.has(w));
+                setDictionary(next);
+                saveLocalDictionary(next);
                 setSelectedWords(new Set());
                 toast({
                     title: "Bulk Deletion Successful",
@@ -231,19 +293,30 @@ export function DictionaryManager() {
         }
 
         try {
-            const result = await (window.electron as any).updateWord(editingWord, editValue.trim());
-            if (result.success) {
-                setDictionary(result.dictionary);
+            if (isElectron) {
+                const result = await (window.electron as any).updateWord(editingWord, editValue.trim());
+                if (result.success) {
+                    setDictionary(result.dictionary);
+                    setEditingWord(null);
+                    toast({
+                        title: "Word Updated",
+                        description: `"${editingWord}" changed to "${editValue.trim()}".`,
+                    });
+                } else {
+                    toast({
+                        variant: "destructive",
+                        title: "Error",
+                        description: result.error || "Failed to update word.",
+                    });
+                }
+            } else {
+                const next = dictionary.map(w => w === editingWord ? editValue.trim() : w);
+                setDictionary(next);
+                saveLocalDictionary(next);
                 setEditingWord(null);
                 toast({
                     title: "Word Updated",
                     description: `"${editingWord}" changed to "${editValue.trim()}".`,
-                });
-            } else {
-                toast({
-                    variant: "destructive",
-                    title: "Error",
-                    description: result.error || "Failed to update word.",
                 });
             }
         } catch (error) {
@@ -253,9 +326,19 @@ export function DictionaryManager() {
 
     const handleSort = async () => {
         try {
-            const result = await (window.electron as any).sortDictionary();
-            if (result.success) {
-                setDictionary(result.dictionary);
+            if (isElectron) {
+                const result = await (window.electron as any).sortDictionary();
+                if (result.success) {
+                    setDictionary(result.dictionary);
+                    toast({
+                        title: "Sorted",
+                        description: "Dictionary sorted alphabetically.",
+                    });
+                }
+            } else {
+                const next = [...dictionary].sort((a, b) => a.localeCompare(b));
+                setDictionary(next);
+                saveLocalDictionary(next);
                 toast({
                     title: "Sorted",
                     description: "Dictionary sorted alphabetically.",
@@ -266,7 +349,7 @@ export function DictionaryManager() {
         }
     };
 
-    if (!isElectron) {
+    if (!isElectron && !isMobile) {
         return (
             <div className="p-4 text-center text-muted-foreground text-xs italic">
                 Dictionary is only available in the desktop app.
@@ -331,7 +414,7 @@ export function DictionaryManager() {
                         >
                             <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
-                        {isDriveConnected ? (
+                        {isElectron && (isDriveConnected ? (
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
@@ -352,9 +435,6 @@ export function DictionaryManager() {
                                 <PopoverContent className="w-56 p-2 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-xl rounded-xl" align="start">
                                     <div className="flex flex-col gap-1">
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-1">Sync Options</p>
-
-
-
                                         <button
                                             onClick={() => handleSync('push')}
                                             className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 rounded-lg transition-colors text-left"
@@ -367,7 +447,6 @@ export function DictionaryManager() {
                                                 <div className="text-[10px] opacity-70">Overwrite cloud (Deletions)</div>
                                             </div>
                                         </button>
-
                                         <button
                                             onClick={() => handleSync('pull')}
                                             className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-blue-900/20 hover:text-violet-600 rounded-lg transition-colors text-left"
@@ -398,7 +477,7 @@ export function DictionaryManager() {
                                 )}
                                 {isSyncing ? "Connecting..." : "Connect Cloud"}
                             </Button>
-                        )}
+                        ))}
                     </div>
                     <div className="flex items-center gap-3">
                         <Button

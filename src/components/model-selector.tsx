@@ -290,7 +290,6 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       </PopoverTrigger>
       <PopoverContent className="w-[300px] p-0" align="start">
         <Command
-          value={activeModel}
           shouldFilter={true}
         >
           <CommandInput placeholder="Search models..." autoFocus />
@@ -305,8 +304,6 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                       key={model.name}
                       value={model.name}
                       onSelect={() => handleSelect(model.name)}
-                      onClick={() => handleSelect(model.name)}
-                      onPointerDown={() => handleSelect(model.name)}
                       className={cn(
                         "text-xs cursor-pointer outline-none transition-all duration-75 flex items-center justify-start w-full text-left gap-2 py-2.5",
                         "hover:bg-accent hover:text-accent-foreground active:scale-[0.98] active:bg-accent/50",
@@ -341,16 +338,6 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                         handleDownload(model.name);
                       }
                     }}
-                    onClick={() => {
-                      if (!isDownloading) {
-                        handleDownload(model.name);
-                      }
-                    }}
-                    onPointerDown={() => {
-                      if (!isDownloading) {
-                        handleDownload(model.name);
-                      }
-                    }}
                     className="relative flex items-center justify-start gap-2 px-2 py-2.5 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full text-left"
                   >
                     <div className="h-4 w-4 shrink-0" /> {/* Spacer for alignment */}
@@ -375,9 +362,18 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                       size="sm"
                       variant="ghost"
                       className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary shrink-0"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                      }}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDownload(model.name);
+                        e.preventDefault();
+                        if (!isDownloading && downloading !== model.name) {
+                          handleDownload(model.name);
+                        }
                       }}
                       disabled={isDownloading || downloading === model.name}
                     >
