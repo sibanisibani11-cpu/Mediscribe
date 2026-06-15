@@ -8,39 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Generate icon.ico (Windows needs it) ─────────────────────────────────
-  generate-icons:
-    name: Generate Platform Icons
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install icon generation deps
-        run: npm install --no-save sharp png-to-ico
-
-      - name: Generate icon.ico and AppX tile assets
-        run: node scripts/generate-icons.js
-
-      - name: Upload icon artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: platform-icons
-          path: |
-            build/icon.ico
-            build/appx/
-          retention-days: 1
-
   # ── Platform builds ───────────────────────────────────────────────────────
   build:
     name: Build for ${{ matrix.os }}
-    needs: generate-icons
     strategy:
       fail-fast: false
       matrix:
@@ -63,33 +33,30 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 2. Download generated icons ───────────────────────────────────────
-      - name: Download platform icons
-        uses: actions/download-artifact@v4
-        with:
-          name: platform-icons
-          path: build/
-
-      # ── 3. Node setup ──────────────────────────────────────────────────────
+      # ── 2. Node setup ──────────────────────────────────────────────────────
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      # ── 4. Install dependencies ───────────────────────────────────────────
+      # ── 3. Install dependencies ───────────────────────────────────────────
       - name: Install Dependencies
         run: npm ci
+
+      # ── 4. Generate Platform Icons ────────────────────────────────────────
+      - name: Generate Platform Icons
+        run: node scripts/generate-icons.js
 
       # ── 5. Build Next.js ──────────────────────────────────────────────────
       - name: Build Next.js App
         run: npm run build --ignore-scripts
 
-      # ── 5. Rebuild native modules for the current platform ─────────────────
+      # ── 6. Rebuild native modules for the current platform ─────────────────
       - name: Rebuild native modules
         run: npx electron-builder install-app-deps
 
-      # ── 6. Bundle binaries (skip icon generation, already done above) ─────
+      # ── 7. Bundle binaries (skip icon generation, already done above) ─────
       - name: Bundle Models and Binaries
         run: npm run prebuild
         env:
@@ -120,6 +87,7 @@ jobs:
       # ── 9. Upload Artifacts ───────────────────────────────────────────────
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: MediScribe-${{ matrix.platform }}-artifacts
           path: |
