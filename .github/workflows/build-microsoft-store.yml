@@ -42,16 +42,18 @@ jobs:
 
       - name: Upload AppX artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: mediscribe-appx
           path: |
             dist-electron/*.appx
             dist-electron/*.appxupload
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
       - name: Upload Windows installer artifacts
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: mediscribe-windows-installers
           path: |
@@ -59,7 +61,7 @@ jobs:
             dist-electron/*.exe.blockmap
             dist-electron/latest.yml
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 1
 
       - name: Publish to Microsoft Store
         if: env.HAS_STORE_CREDS == 'true'

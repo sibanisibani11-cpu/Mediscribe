@@ -9,11 +9,26 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
+  # ── Cleanup previous artifacts to free storage ───────────────────────────
+  cleanup:
+    name: Clean up old artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all existing artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Listing artifacts for repo ${{ github.repository }}..."
+          gh api repos/${{ github.repository }}/actions/artifacts --paginate --jq '.artifacts[].id' | xargs -I {} gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/{} || true
+          echo "Artifact cleanup completed."
+
   # ── Platform builds ───────────────────────────────────────────────────────
   build:
     name: Build for ${{ matrix.os }}
+    needs: cleanup
     strategy:
       fail-fast: false
       matrix:
@@ -106,4 +121,4 @@ jobs:
             dist-electron/*.blockmap
             dist-electron/latest*.yml
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 1
