@@ -77,22 +77,5 @@ jobs:
             npx electron-builder --${{ matrix.platform }} --publish=never
           fi
 
-      - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: MediScribe-${{ matrix.platform }}-artifacts
-          path: |
-            dist-electron/*.exe
-            dist-electron/*.msi
-            dist-electron/*.dmg
-            dist-electron/*.pkg
-            dist-electron/*.AppImage
-            dist-electron/*.deb
-            dist-electron/*.zip
-            dist-electron/*.appx
-            dist-electron/*.msix
-            dist-electron/*.blockmap
-            dist-electron/latest*.yml
-          if-no-files-found: warn
-          retention-days: 1
+      - name: Avoid storing large installer artifacts in GitHub Actions
+        run: echo "Build complete. Installer artifacts are published to GitHub Releases for tag builds and not retained as workflow artifacts."
