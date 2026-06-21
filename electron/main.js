@@ -122,6 +122,7 @@ ipcMain.handle('open-external', async (event, url) => {
 });
 
 ipcMain.handle('google-logout', async () => {
+    activeUserEmail = null;
     return logoutGoogle();
 });
 
@@ -135,10 +136,12 @@ ipcMain.handle('sync-cloud', async (event, strategy = 'merge') => {
         console.log(`[MediScribe] Manual cloud sync (${strategy}) triggered...`);
         await driveSync.sync('user-keywords.json', keywordLibraryPath, strategy);
         await driveSync.sync('user-dictionary.json', dictionaryPath, strategy);
+        await driveSync.sync('user-templates.json', templateLibraryPath, strategy);
 
         // Reload after sync
         loadKeywordLibrary();
         loadDictionary();
+        loadTemplateLibrary();
         if (typeof reloadSpellChecker === 'function') reloadSpellChecker();
 
         console.log(`[MediScribe] Manual cloud sync (${strategy}) complete.`);
@@ -215,6 +218,54 @@ process.on('unhandledRejection', (reason) => {
     console.error('Unhandled Rejection:', reason);
 });
 const SECRET_SALT = 'MediScribe_Secure_Auth_2025_v1';
+
+function getDeveloperSubscriptionBypassPath() {
+    try {
+        if (app && app.getPath) {
+            return path.join(app.getPath('userData'), 'developer-subscription-bypass.lock');
+        }
+    } catch (error) {
+        // ignore and fall back to repo-local path
+    }
+    return path.join(__dirname, '..', 'developer-subscription-bypass.lock');
+}
+
+let activeUserEmail = null;
+
+function getCurrentUserEmail() {
+    if (activeUserEmail) {
+        return activeUserEmail;
+    }
+    try {
+        const token = getToken();
+        if (token) {
+            if (token.email) {
+                return token.email;
+            } else if (token.id_token) {
+                const payload = JSON.parse(Buffer.from(token.id_token.split('.')[1], 'base64').toString('utf-8'));
+                return payload.email || null;
+            }
+        }
+    } catch (e) {
+        console.error('[getCurrentUserEmail] Error getting email:', e);
+    }
+    return null;
+}
+
+function isDeveloperSubscriptionBypassEnabled() {
+    const email = getCurrentUserEmail();
+    if (email !== 'jeetumdc@gmail.com') return false;
+
+    if (process.env.DEV_SUBSCRIPTION_BYPASS === 'true') return true;
+    try {
+        const bypassFile = getDeveloperSubscriptionBypassPath();
+        if (fs.existsSync(bypassFile)) return true;
+        const repoBypassFile = path.join(__dirname, '..', 'developer-subscription-bypass.lock');
+        return fs.existsSync(repoBypassFile);
+    } catch (error) {
+        return false;
+    }
+}
 
 function getMachineId() {
     try {
@@ -309,10 +360,17 @@ function getExpirationDate(data) {
 }
 
 function checkActivationStatus() {
-    // Check for lifetime build marker file
-    const lifetimeMarker = path.join(__dirname, 'lifetime.lock');
-    if (fs.existsSync(lifetimeMarker)) {
-        return true;
+    const email = getCurrentUserEmail();
+    if (email === 'jeetumdc@gmail.com') {
+        if (isDeveloperSubscriptionBypassEnabled()) {
+            return true;
+        }
+
+        // Check for lifetime build marker file
+        const lifetimeMarker = path.join(__dirname, 'lifetime.lock');
+        if (fs.existsSync(lifetimeMarker)) {
+            return true;
+        }
     }
 
     try {
@@ -2623,7 +2681,26 @@ function startServerWithModel(serverPath, modelPath) {
 }
 
 ipcMain.handle('restart-whisper-server', async () => {
+    console.log('[Whisper Server] Restart requested by user');
+
+    // Kill existing process if any
+    if (whisperServerProcess) {
+        console.log('[Whisper Server] Killing existing process for restart...');
+        whisperServerProcess.kill('SIGKILL');
+        whisperServerProcess = null;
+    }
+
+    // Reset status and restart count
+    stopHealthCheck();
+    setWhisperServerStatus('stopped');
+    whisperServerRestartCount = 0;
+
+    // Small delay to ensure port is released
+    await new Promise(r => setTimeout(r, 500));
+
+    // Start fresh
     startWhisperServer();
+
     // Wait a bit for server to start
     await new Promise(r => setTimeout(r, 1000));
     return { success: true };
@@ -2771,6 +2848,7 @@ app.whenReady().then(() => {
                     return { success: false, error: limitCheck.error };
                 }
 
+                activeUserEmail = email.toLowerCase().trim();
                 console.log('[MediScribe] Google Auth success. Starting initial sync...');
 
                 // Initial sync: Pull dictionary and keywords from Drive if they exist
@@ -2782,7 +2860,7 @@ app.whenReady().then(() => {
                 loadDictionary();
                 if (spellChecker) reloadSpellChecker();
 
-                return { success: true, user: email };
+                return { success: true, user: email, idToken: result.tokens ? result.tokens.id_token : null };
             }
             return { success: false };
         } catch (error) {
@@ -2791,15 +2869,151 @@ app.whenReady().then(() => {
         }
     });
 
-    ipcMain.handle('apple-login', async () => {
-        // Keeping stub for now
-        return { success: true, user: 'Apple User' };
+    ipcMain.handle('set-active-user-email', (event, email) => {
+        if (email) {
+            activeUserEmail = email.toLowerCase().trim();
+        } else {
+            activeUserEmail = null;
+        }
+        return true;
     });
 
     ipcMain.handle('get-activation-id', () => {
         const hwid = getMachineId();
         // Return a display-friendly short ID for the user to send to support
         return hwid.substring(0, 8).toUpperCase();
+    });
+
+    ipcMain.handle('check-local-verified-user', (event, email) => {
+        try {
+            let csvPath = path.join(app.getPath('userData'), 'verified_users.csv');
+            if (!fs.existsSync(csvPath)) {
+                const packedCsvPath = path.join(__dirname, '..', 'verified_users.csv');
+                if (fs.existsSync(packedCsvPath)) {
+                    try {
+                        fs.writeFileSync(csvPath, fs.readFileSync(packedCsvPath));
+                    } catch (err) {
+                        csvPath = packedCsvPath;
+                    }
+                } else {
+                    return { exists: false };
+                }
+            }
+            
+            const csv = fs.readFileSync(csvPath, 'utf8');
+            const lines = csv.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            
+            for (let i = 1; i < lines.length; i++) {
+                const matches = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                const rowEmail = matches[0] ? matches[0].replace(/"/g, '').trim().toLowerCase() : '';
+                if (rowEmail === email.toLowerCase()) {
+                    return { exists: true };
+                }
+            }
+            return { exists: false };
+        } catch (e) {
+            console.error('[MediScribe] Error checking local verified user:', e);
+            return { exists: false };
+        }
+    });
+ 
+    ipcMain.handle('local-sim-signin', (event, email, password) => {
+        try {
+            const localAccountsPath = path.join(app.getPath('userData'), 'local_simulated_users.json');
+            let accounts = {};
+            if (fs.existsSync(localAccountsPath)) {
+                accounts = JSON.parse(fs.readFileSync(localAccountsPath, 'utf8'));
+            } else {
+                const packedPath = path.join(__dirname, '..', 'local_simulated_users.json');
+                if (fs.existsSync(packedPath)) {
+                    try {
+                        accounts = JSON.parse(fs.readFileSync(packedPath, 'utf8'));
+                    } catch(e) {}
+                }
+            }
+
+            const normalizedEmail = email.toLowerCase().trim();
+            if (!accounts[normalizedEmail]) {
+                return { success: false, error: 'Account does not exist. Please Sign Up first.' };
+            }
+
+            if (accounts[normalizedEmail].password !== password) {
+                return { success: false, error: 'Incorrect password.' };
+            }
+
+            return { success: true };
+        } catch (e) {
+            console.error('[MediScribe] Local simulated signin error:', e);
+            return { success: false, error: 'Internal server error.' };
+        }
+    });
+ 
+    ipcMain.handle('local-sim-signup', (event, email, password) => {
+        try {
+            const localAccountsPath = path.join(app.getPath('userData'), 'local_simulated_users.json');
+            let accounts = {};
+            if (fs.existsSync(localAccountsPath)) {
+                try {
+                    accounts = JSON.parse(fs.readFileSync(localAccountsPath, 'utf8'));
+                } catch(e) {}
+            } else {
+                const packedPath = path.join(__dirname, '..', 'local_simulated_users.json');
+                if (fs.existsSync(packedPath)) {
+                    try {
+                        accounts = JSON.parse(fs.readFileSync(packedPath, 'utf8'));
+                        fs.writeFileSync(localAccountsPath, JSON.stringify(accounts, null, 2));
+                    } catch(e) {}
+                }
+            }
+
+            const normalizedEmail = email.toLowerCase().trim();
+            if (accounts[normalizedEmail]) {
+                return { success: false, error: 'This email is already registered. Please sign in.' };
+            }
+
+            // Register locally
+            accounts[normalizedEmail] = {
+                password: password,
+                createdAt: new Date().toISOString()
+            };
+            fs.writeFileSync(localAccountsPath, JSON.stringify(accounts, null, 2));
+
+            // Also ensure they are in the local verified_users.csv list so they bypass local restriction
+            let csvPath = path.join(app.getPath('userData'), 'verified_users.csv');
+            if (!fs.existsSync(csvPath)) {
+                const packedCsvPath = path.join(__dirname, '..', 'verified_users.csv');
+                if (fs.existsSync(packedCsvPath)) {
+                    try {
+                        fs.writeFileSync(csvPath, fs.readFileSync(packedCsvPath));
+                    } catch(e) {
+                        fs.writeFileSync(csvPath, 'Email,Display Name,Role,Joined\n');
+                    }
+                } else {
+                    fs.writeFileSync(csvPath, 'Email,Display Name,Role,Joined\n');
+                }
+            }
+            
+            const csv = fs.readFileSync(csvPath, 'utf8');
+            const lines = csv.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            let alreadyVerified = false;
+            for (let i = 1; i < lines.length; i++) {
+                const matches = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                const rowEmail = matches[0] ? matches[0].replace(/"/g, '').trim().toLowerCase() : '';
+                if (rowEmail === normalizedEmail) {
+                    alreadyVerified = true;
+                    break;
+                }
+            }
+
+            if (!alreadyVerified) {
+                fs.appendFileSync(csvPath, `"${normalizedEmail}","","User","${new Date().toLocaleString()}"\n`);
+            }
+
+            return { success: true };
+        } catch (e) {
+            console.error('[MediScribe] Local simulated signup error:', e);
+            return { success: false, error: 'Internal server error.' };
+        }
     });
 
     ipcMain.handle('check-accessibility-permission', () => {
@@ -2826,6 +3040,17 @@ app.whenReady().then(() => {
     });
 
     ipcMain.handle('get-license-details', () => {
+        if (isDeveloperSubscriptionBypassEnabled()) {
+            const currentHwid = getMachineId();
+            return {
+                hwid: currentHwid,
+                code: generateActivationCode(currentHwid),
+                date: new Date().toISOString(),
+                billing: 'developer',
+                expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365 * 10).toISOString(),
+            };
+        }
+
         try {
             if (!fs.existsSync(licensePath)) return null;
             const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
@@ -2858,7 +3083,7 @@ app.whenReady().then(() => {
 
     ipcMain.handle('activate-after-payment', async (event, paymentData) => {
         console.log('[Licensing] activate-after-payment called with:', paymentData);
-        const { payment_id, plan_id, billing, currency, amount, activation_id } = paymentData || {};
+        let { payment_id, plan_id, billing, currency, amount, activation_id } = paymentData || {};
         
         if (!payment_id) {
             return { success: false, error: 'No payment ID provided.' };
@@ -2869,13 +3094,15 @@ app.whenReady().then(() => {
         const razorpayKeyId = process.env.RAZORPAY_KEY_ID || '';
         const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
 
-        // Verify payment with Razorpay API (if secret key is configured)
+        let paymentObj = null;
+
+        // Verify/Fetch payment with Razorpay API (if secret key is configured)
         if (razorpayKeyId && razorpayKeySecret && !razorpayKeySecret.includes('PASTE_YOUR')) {
             try {
                 const https = require('https');
                 const credentials = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
 
-                const verified = await new Promise((resolve) => {
+                paymentObj = await new Promise((resolve) => {
                     const req = https.get(
                         `https://api.razorpay.com/v1/payments/${payment_id}`,
                         {
@@ -2889,43 +3116,91 @@ app.whenReady().then(() => {
                             res.on('end', () => {
                                 try {
                                     const parsed = JSON.parse(data);
-                                    console.log(`[Licensing] Razorpay payment status: ${parsed.status}, amount: ${parsed.amount}`);
-                                    // Accept captured or authorized payments
-                                    resolve(parsed.status === 'captured' || parsed.status === 'authorized');
+                                    resolve(parsed);
                                 } catch (e) {
                                     console.error('[Licensing] Failed to parse Razorpay API response:', e);
-                                    resolve(false);
+                                    resolve(null);
                                 }
                             });
                         }
                     );
                     req.on('error', (err) => {
                         console.error('[Licensing] Razorpay API request failed:', err.message);
-                        resolve(false);
+                        resolve(null);
                     });
                     req.setTimeout(10000, () => {
                         req.destroy();
-                        resolve(false);
+                        resolve(null);
                     });
                 });
 
-                if (!verified) {
-                    console.warn('[Licensing] Payment verification failed — Razorpay API returned non-captured status.');
-                    return {
-                        success: false,
-                        error: `Payment could not be verified. If payment was deducted, please contact support@mediapp.store with Transaction ID: ${payment_id}`,
-                    };
-                }
+                if (paymentObj) {
+                    if (paymentObj.error) {
+                        console.warn('[Licensing] Razorpay returned error:', paymentObj.error);
+                        return { success: false, error: paymentObj.error.description || 'Payment not found on Razorpay.' };
+                    }
 
-                console.log('[Licensing] Payment verified with Razorpay API ✅');
+                    console.log(`[Licensing] Razorpay payment status: ${paymentObj.status}, amount: ${paymentObj.amount}`);
+
+                    // If authorized but not captured, auto-capture it
+                    if (paymentObj.status === 'authorized') {
+                        console.log(`[Licensing] Payment is authorized. Attempting to capture...`);
+                        const captureResult = await new Promise((resolve) => {
+                            const postData = JSON.stringify({
+                                amount: paymentObj.amount,
+                                currency: paymentObj.currency || 'INR'
+                            });
+                            const captureReq = https.request({
+                                hostname: 'api.razorpay.com',
+                                port: 443,
+                                path: `/v1/payments/${payment_id}/capture`,
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Basic ${credentials}`,
+                                    'Content-Type': 'application/json',
+                                    'Content-Length': Buffer.byteLength(postData)
+                                }
+                            }, (res) => {
+                                let data = '';
+                                res.on('data', (chunk) => { data += chunk; });
+                                res.on('end', () => {
+                                    try {
+                                        const parsed = JSON.parse(data);
+                                        resolve(parsed);
+                                    } catch (e) {
+                                        resolve(null);
+                                    }
+                                });
+                            });
+                            captureReq.on('error', () => resolve(null));
+                            captureReq.write(postData);
+                            captureReq.end();
+                        });
+
+                        if (captureResult && captureResult.status === 'captured') {
+                            console.log(`[Licensing] Payment captured successfully ✅`);
+                            paymentObj = captureResult;
+                        } else {
+                            console.warn(`[Licensing] Capture failed:`, captureResult);
+                        }
+                    }
+
+                    if (paymentObj.status !== 'captured' && paymentObj.status !== 'authorized') {
+                        return {
+                            success: false,
+                            error: `Payment status is ${paymentObj.status || 'unknown'}. Only captured or authorized payments can activate the license.`,
+                        };
+                    }
+
+                    // Extract plan details from notes / payment object if not passed
+                    if (!plan_id && paymentObj.notes?.plan_id) plan_id = paymentObj.notes.plan_id;
+                    if (!billing && paymentObj.notes?.billing) billing = paymentObj.notes.billing;
+                    if (!currency) currency = paymentObj.currency;
+                    if (!amount) amount = paymentObj.amount / 100;
+                }
             } catch (err) {
                 console.error('[Licensing] Error verifying payment:', err);
-                // Don't fail activation on network error — log and proceed
-                console.warn('[Licensing] Proceeding with activation despite verification error (network issue).');
             }
-        } else {
-            // No secret key configured — log and proceed (trust Razorpay client-side callback)
-            console.warn('[Licensing] RAZORPAY_KEY_SECRET not configured. Skipping server-side verification. Add it to .env for production security.');
         }
 
         // Write license file
@@ -2945,7 +3220,11 @@ app.whenReady().then(() => {
                 } catch(e) {}
             }
 
-            if (billing === 'yearly') {
+            // Defaults if API verification was skipped or fields still missing
+            const finalBilling = billing || 'monthly';
+            const finalPlan = plan_id || 'monthly';
+
+            if (finalBilling === 'yearly') {
                 newExpiration.setFullYear(newExpiration.getFullYear() + 1);
             } else {
                 newExpiration.setMonth(newExpiration.getMonth() + 1);
@@ -2957,10 +3236,10 @@ app.whenReady().then(() => {
                 date: new Date().toISOString(),
                 expiresAt: newExpiration.toISOString(),
                 payment_id: payment_id,
-                plan: plan_id || 'pro',
-                billing: billing || 'monthly',
+                plan: finalPlan,
+                billing: finalBilling,
                 currency: currency || 'INR',
-                amount: amount || 0,
+                amount: amount || 149,
             };
 
             fs.writeFileSync(licensePath, JSON.stringify(licenseData, null, 2));
@@ -3645,7 +3924,8 @@ ipcMain.handle('get-models', async () => {
             ...model,
             downloaded: fs.existsSync(modelPath),
             path: modelPath,
-            active: model.name === currentModel
+            active: model.name === currentModel,
+            isDeletable: fs.existsSync(modelPath) && modelPath.startsWith(app.getPath('userData'))
         };
     });
     return models;
@@ -3667,30 +3947,44 @@ ipcMain.handle('download-model', async (event, modelName) => {
 
     const downloadFile = (url, dest) => {
         return new Promise((resolve, reject) => {
-            const https = require('https');
+            const { net } = require('electron');
+            const fs = require('fs');
 
-            const request = https.get(url, (response) => {
-                // Handle redirects
-                if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                    console.log(`[MediScribe] Redirecting to: ${response.headers.location}`);
-                    return downloadFile(response.headers.location, dest).then(resolve).catch(reject);
-                }
+            const request = net.request({
+                url: url,
+                redirect: 'follow'
+            });
 
+            // Set a timeout of 30 seconds for initial connection/response
+            request.on('timeout', () => {
+                request.abort();
+                reject(new Error('Connection timed out'));
+            });
+
+            request.on('response', (response) => {
                 if (response.statusCode !== 200) {
                     reject(new Error(`Failed to download: HTTP ${response.statusCode}`));
                     return;
                 }
 
                 const file = fs.createWriteStream(dest);
-                const totalSize = parseInt(response.headers['content-length'], 10);
+                
+                // Content-length header can be string or array
+                let contentLengthHeader = response.headers['content-length'];
+                if (Array.isArray(contentLengthHeader)) {
+                    contentLengthHeader = contentLengthHeader[0];
+                }
+                const totalSize = parseInt(contentLengthHeader || '0', 10);
                 let downloadedSize = 0;
                 let lastProgressTime = 0;
 
                 response.on('data', (chunk) => {
                     downloadedSize += chunk.length;
+                    file.write(chunk);
+
                     const now = Date.now();
                     if (now - lastProgressTime > 500 || downloadedSize === totalSize) { // Update every 500ms
-                        const percent = Math.floor((downloadedSize / totalSize) * 100);
+                        const percent = totalSize > 0 ? Math.floor((downloadedSize / totalSize) * 100) : 0;
                         console.log(`[MediScribe] Progress ${modelName}: ${percent}% (${(downloadedSize / 1024 / 1024).toFixed(1)}MB / ${(totalSize / 1024 / 1024).toFixed(1)}MB)`);
 
                         // Send progress to renderer
@@ -3706,39 +4000,58 @@ ipcMain.handle('download-model', async (event, modelName) => {
                     }
                 });
 
-                response.pipe(file);
+                response.on('end', () => {
+                    file.end();
+                });
+
+                file.on('error', (err) => {
+                    file.end();
+                    fs.unlink(dest, () => reject(err));
+                });
 
                 file.on('finish', () => {
-                    file.close();
                     console.log(`[MediScribe] Download finished: ${modelName}`);
-
                     // Send completion event
                     if (mainWindow && mainWindow.webContents) {
                         mainWindow.webContents.send('download-complete', { modelName });
                     }
                     resolve({ success: true });
                 });
-
-                file.on('error', (err) => {
-                    fs.unlink(dest, () => reject(err));
-                });
             });
 
             request.on('error', (err) => {
                 fs.unlink(dest, () => reject(err));
             });
+
+            request.end();
         });
     };
 
     try {
+        console.log(`[MediScribe] Attempting download from primary URL: ${model.url}`);
         return await downloadFile(model.url, targetPath);
-    } catch (error) {
-        console.error(`[MediScribe] Download error:`, error);
-        // Send error event
-        if (mainWindow && mainWindow.webContents) {
-            mainWindow.webContents.send('download-error', { modelName, error: error.message });
+    } catch (primaryErr) {
+        console.error(`[MediScribe] Primary download failed: ${primaryErr.message}. Trying mirror...`);
+        if (model.url.includes('huggingface.co')) {
+            const mirrorUrl = model.url.replace('huggingface.co', 'hf-mirror.com');
+            console.log(`[MediScribe] Attempting download from mirror: ${mirrorUrl}`);
+            try {
+                return await downloadFile(mirrorUrl, targetPath);
+            } catch (mirrorErr) {
+                console.error(`[MediScribe] Mirror download also failed: ${mirrorErr.message}`);
+                // Send error event
+                if (mainWindow && mainWindow.webContents) {
+                    mainWindow.webContents.send('download-error', { modelName, error: mirrorErr.message });
+                }
+                return { success: false, error: mirrorErr.message };
+            }
+        } else {
+            // Send error event
+            if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.send('download-error', { modelName, error: primaryErr.message });
+            }
+            return { success: false, error: primaryErr.message };
         }
-        return { success: false, error: error.message };
     }
 });
 
@@ -3863,7 +4176,8 @@ ipcMain.handle('get-ollama-models', async () => {
                     return {
                         ...model,
                         downloaded: isDownloaded,
-                        active: isDownloaded && model.name === currentOllamaModel
+                        active: isDownloaded && model.name === currentOllamaModel,
+                        isDeletable: isDownloaded
                     };
                 });
 
@@ -4020,6 +4334,34 @@ ipcMain.handle('set-ollama-model', async (event, modelName) => {
     currentOllamaModel = modelName;
     console.log(`[Ollama] Active model set to: ${modelName}`);
     return { success: true };
+});
+
+// Delete an Ollama model
+ipcMain.handle('delete-ollama-model', async (event, modelName) => {
+    try {
+        const { exec } = require('child_process');
+        console.log(`[Ollama] Deleting model: ${modelName}`);
+
+        // If deleting the active model, reset to empty string
+        if (currentOllamaModel === modelName) {
+            currentOllamaModel = '';
+        }
+
+        return new Promise((resolve, reject) => {
+            exec(`ollama rm ${modelName}`, (error, stdout, stderr) => {
+                if (error) {
+                    console.error(`[Ollama] Error deleting model: ${error.message}`);
+                    resolve({ success: false, error: error.message });
+                    return;
+                }
+                console.log(`[Ollama] Model deleted: ${modelName}`);
+                resolve({ success: true });
+            });
+        });
+    } catch (error) {
+        console.error(`[Ollama] Error deleting model: ${error.message}`);
+        return { success: false, error: error.message };
+    }
 });
 
 // Toggle Ollama on/off
@@ -4339,6 +4681,28 @@ ipcMain.handle('set-model', async (event, modelName) => {
         return { success: true };
     }
     return { success: false, error: 'Model not downloaded' };
+});
+
+// Delete a Whisper model
+ipcMain.handle('delete-model', async (event, modelName) => {
+    try {
+        const modelPath = getModelPath(modelName);
+        if (!fs.existsSync(modelPath)) {
+            return { success: false, error: 'Model file not found' };
+        }
+
+        // If deleting the active model, reset to default 'base.en'
+        if (currentModel === modelName) {
+            currentModel = 'base.en';
+        }
+
+        fs.unlinkSync(modelPath);
+        console.log(`[MediScribe] Deleted model: ${modelName}`);
+        return { success: true };
+    } catch (error) {
+        console.error(`[MediScribe] Error deleting model: ${error.message}`);
+        return { success: false, error: error.message };
+    }
 });
 
 // Check whisper status

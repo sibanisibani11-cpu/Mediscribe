@@ -20,7 +20,7 @@ export default function RootLayout({
         {/* Google Fonts removed: external fetches block rendering in packaged Electron app */}
         {/* System fonts are used instead via globals.css font-family stack */}
       </head>
-      <body className="font-body antialiased">
+      <body suppressHydrationWarning className="font-body antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="light"

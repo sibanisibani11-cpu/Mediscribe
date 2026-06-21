@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -53,6 +53,8 @@
     "dictionary-en": "^4.0.0",
     "dotenv": "^16.5.0",
     "electron-updater": "^6.8.3",
+    "firebase": "^11.3.1",
+    "firebase-admin": "^12.0.0",
     "form-data": "^4.0.5",
     "google-auth-library": "^10.5.0",
     "googleapis": "^169.0.0",
@@ -240,6 +242,7 @@
       "format": "UDZO",
       "title": "MediScribe ${version}",
       "icon": "icon.png",
+      "backgroundColor": "#1a1a2e",
       "contents": [
         {
           "x": 110,

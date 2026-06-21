@@ -26,6 +26,7 @@ interface Model {
   downloaded: boolean;
   active: boolean;
   path: string;
+  isDeletable?: boolean;
 }
 
 interface ModelSelectorProps {
@@ -41,6 +42,11 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const [loading, setLoading] = React.useState(true);
   const [serverStatus, setServerStatus] = React.useState<string>("stopped");
   const { toast } = useToast();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Robust check for Electron
   const isElectron = typeof window !== 'undefined' && (window.electron?.isElectron === true || !!window.electron);
@@ -228,6 +234,34 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     }
   };
 
+  const handleDelete = async (modelName: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!isElectron) return;
+
+    try {
+      const result = await (window.electron as any).deleteModel(modelName);
+      if (result.success) {
+        toast({
+          title: "Model Deleted",
+          description: `${modelName} has been removed from your system.`,
+        });
+        await fetchModels();
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Delete Failed",
+          description: result.error || "Could not delete the model",
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Delete Error",
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
   if (isElectron && models.length === 0 && !loading) {
     return (
       <Button
@@ -246,6 +280,15 @@ export function ModelSelector({ className }: ModelSelectorProps) {
           {restarting ? "Restarting..." : "Restart Server"}
         </span>
       </Button>
+    );
+  }
+
+  if (!mounted) {
+    return (
+      <div className="h-9 flex items-center gap-2 px-3 rounded-md bg-muted/30 border text-muted-foreground cursor-not-allowed flex-1">
+        <div className="w-2 h-2 rounded-full bg-gray-400" />
+        <span className="text-xs font-medium whitespace-nowrap">Service Offline</span>
+      </div>
     );
   }
 
@@ -318,8 +361,10 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                       />
                       <span className="font-semibold text-slate-900 dark:text-slate-100 flex-1 truncate">{model.name}</span>
                       <span className="text-slate-500 dark:text-slate-400 text-[10px] font-medium whitespace-nowrap ml-auto">{model.size}</span>
-                      <div className="w-8 flex justify-center shrink-0">
-                        <Check className="h-4 w-4 text-green-500" />
+                      <div className="flex items-center gap-1 ml-2">
+                        <div className="w-8 flex justify-center shrink-0">
+                          <Check className="h-4 w-4 text-green-500" />
+                        </div>
                       </div>
                     </CommandItem>
                   );
@@ -330,20 +375,19 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                 const isDownloading = progress !== undefined;
 
                 return (
-                  <CommandItem
+                  <div
                     key={model.name}
-                    value={model.name.toLowerCase()}
-                    onSelect={() => {
-                      if (!isDownloading) {
+                    className="relative flex items-center justify-start gap-2 px-2 py-2.5 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full text-left"
+                    onClick={() => {
+                      if (!isDownloading && downloading !== model.name) {
                         handleDownload(model.name);
                       }
                     }}
-                    className="relative flex items-center justify-start gap-2 px-2 py-2.5 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full text-left"
                   >
                     <div className="h-4 w-4 shrink-0" /> {/* Spacer for alignment */}
                     <div className="flex-1 flex flex-col min-w-0">
                       <div className="flex items-center justify-between w-full">
-                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">{model.name}</span>
+                        <span className="font-semibold text-slate-900 dark:text-slate-100 truncate hover:text-primary transition-colors">{model.name}</span>
                         <span className="text-slate-500 dark:text-slate-400 text-[10px] font-medium ml-auto whitespace-nowrap px-2">{model.size}</span>
                       </div>
                       {isDownloading && (
@@ -362,11 +406,19 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                       size="sm"
                       variant="ghost"
                       className="h-8 w-8 p-0 hover:bg-primary/10 hover:text-primary shrink-0"
-                      onPointerDown={(e) => {
-                        e.stopPropagation();
-                      }}
                       onMouseDown={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
+                        if (!isDownloading && downloading !== model.name) {
+                          handleDownload(model.name);
+                        }
+                      }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        if (!isDownloading && downloading !== model.name) {
+                          handleDownload(model.name);
+                        }
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -383,12 +435,30 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                         <Download className="h-4 w-4 text-muted-foreground" />
                       )}
                     </Button>
-                  </CommandItem>
+                  </div>
                 );
               })}
             </CommandGroup>
           </CommandList>
         </Command>
+        {activeModel && models.find((m) => m.name === activeModel)?.isDeletable && (
+          <div className="border-t p-2 flex items-center justify-between bg-muted/20">
+            <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">
+              Active: {activeModel}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(activeModel);
+              }}
+            >
+              Uninstall Model
+            </Button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );

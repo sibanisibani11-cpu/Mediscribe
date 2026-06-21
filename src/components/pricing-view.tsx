@@ -5,10 +5,13 @@ import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import { cn, openExternalUrl } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
+import { db, isFirebaseConfigured } from "../lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 interface PricingViewProps {
   onBack: () => void;
   isActivated?: boolean | null;
+  currentUser?: string | null;
 }
 
 type Currency = {
@@ -66,7 +69,7 @@ function loadRazorpay(): Promise<boolean> {
   });
 }
 
-export function PricingView({ onBack, isActivated }: PricingViewProps) {
+export function PricingView({ onBack, isActivated, currentUser }: PricingViewProps) {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
   const [activationId, setActivationID] = useState("");
@@ -75,7 +78,52 @@ export function PricingView({ onBack, isActivated }: PricingViewProps) {
   const [promoError, setPromoError] = useState("");
   const [currentPlan, setCurrentPlan] = useState<string | null>(null);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const [showPaymentInput, setShowPaymentInput] = useState(false);
+  const [manualPaymentId, setManualPaymentId] = useState("");
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const { toast } = useToast();
+
+  const handleManualActivate = async () => {
+    const paymentId = manualPaymentId.trim();
+    if (!paymentId) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please enter a payment ID.",
+      });
+      return;
+    }
+
+    setIsVerifyingPayment(true);
+    try {
+      const result = await (window as any).electron?.activateAfterPayment?.({
+        payment_id: paymentId,
+      });
+
+      if (result?.success) {
+        toast({
+          title: "🎉 Pro License Activated!",
+          description: "Your license has been successfully verified! Reloading...",
+        });
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Activation Failed",
+          description: result?.error || "Invalid or uncaptured payment ID.",
+        });
+      }
+    } catch (err: any) {
+      console.error("Manual activation error:", err);
+      toast({
+        variant: "destructive",
+        title: "Activation Error",
+        description: err.message || "An error occurred while verifying your payment.",
+      });
+    } finally {
+      setIsVerifyingPayment(false);
+    }
+  };
 
   const applyPromoCode = () => {
     const code = promoCode.trim().toUpperCase();
@@ -233,6 +281,30 @@ export function PricingView({ onBack, isActivated }: PricingViewProps) {
                     });
 
                     if (result?.success) {
+                        if (isFirebaseConfigured && db && currentUser) {
+                            try {
+                                const expiresAt = new Date();
+                                if (planId === 'yearly') {
+                                    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+                                } else {
+                                    expiresAt.setMonth(expiresAt.getMonth() + 1);
+                                }
+                                const licenseDetails = {
+                                    billing: planId === 'yearly' ? 'yearly' : 'monthly',
+                                    expiresAt: expiresAt.toISOString(),
+                                    date: new Date().toISOString(),
+                                    hwid: activationId,
+                                };
+                                const userDocRef = doc(db, "users", currentUser);
+                                await setDoc(userDocRef, {
+                                    isActivated: true,
+                                    licenseDetails: licenseDetails
+                                }, { merge: true });
+                            } catch (firestoreErr) {
+                                console.error("Failed to write subscription info to Firestore:", firestoreErr);
+                            }
+                        }
+
                         toast({
                             title: "🎉 Pro License Activated!",
                             description: "Welcome to MediScribe Pro. Reloading now...",
@@ -543,29 +615,44 @@ export function PricingView({ onBack, isActivated }: PricingViewProps) {
 
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 w-full max-w-xs flex flex-col items-center gap-2">
             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">Already Paid?</p>
-            <Button
-                variant="outline"
-                size="sm"
-                className="h-9 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
-                onClick={async () => {
-                    const result = await (window as any).electron?.checkActivation?.();
-                    if (result) {
-                        toast({
-                            title: "Pro License Active",
-                            description: "Your license has been successfully verified! Enjoy MediScribe Pro.",
-                        });
-                        window.location.reload(); // Refresh to update all views
-                    } else {
-                        toast({
-                            variant: "destructive",
-                            title: "Wait a moment",
-                            description: "License not found yet. It may take a minute to sync after payment.",
-                        });
-                    }
-                }}
-            >
-                Check Payment Status
-            </Button>
+            {showPaymentInput ? (
+                <div className="flex flex-col gap-2 w-full mt-2 animate-in fade-in duration-300">
+                    <input
+                        type="text"
+                        placeholder="Payment ID (e.g. pay_...)"
+                        value={manualPaymentId}
+                        onChange={(e) => setManualPaymentId(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/50 w-full transition-all"
+                    />
+                    <div className="flex gap-2 w-full">
+                        <Button
+                            size="sm"
+                            className="flex-1 h-8 text-[10px] font-black uppercase bg-violet-600 hover:bg-violet-700 text-white"
+                            onClick={handleManualActivate}
+                            disabled={isVerifyingPayment}
+                        >
+                            {isVerifyingPayment ? "Verifying..." : "Verify & Activate"}
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-[10px] font-black uppercase text-slate-500 hover:text-slate-700"
+                            onClick={() => { setShowPaymentInput(false); setManualPaymentId(""); }}
+                        >
+                            Cancel
+                        </Button>
+                    </div>
+                </div>
+            ) : (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-4 rounded-xl text-[10px] font-black uppercase tracking-wider border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900"
+                    onClick={() => setShowPaymentInput(true)}
+                >
+                    Check Payment Status / Already Paid
+                </Button>
+            )}
         </div>
       </div>
     </div>

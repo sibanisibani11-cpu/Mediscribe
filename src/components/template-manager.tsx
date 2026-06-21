@@ -3,9 +3,12 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Plus, Trash2, Edit3, Check, X, FileText, Search,
-  Tag, ChevronDown, Upload, FolderOpen, FileIcon, Type
+  Tag, ChevronDown, Upload, FolderOpen, FileIcon, Type,
+  Cloud, RefreshCw, CloudUpload, CloudDownload
 } from "lucide-react";
 import { Button } from "./ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { SyncConfirmDialog } from "./common/sync-confirm-dialog";
 import { useToast } from "../hooks/use-toast";
 import { cn } from "../lib/utils";
 
@@ -79,6 +82,13 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const electron = useMemo(() => typeof window !== "undefined" ? (window as any).electron : null, []);
+  const isElectron = !!electron;
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isDriveConnected, setIsDriveConnected] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; action: "push" | "pull" }>({
+    open: false,
+    action: "push"
+  });
 
   useEffect(() => {
     if (electron?.getTemplates) {
@@ -89,6 +99,14 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
       setTemplates(loadLocalTemplates());
     }
   }, [electron]);
+
+  useEffect(() => {
+    if (isElectron && electron?.getGoogleStatus) {
+      electron.getGoogleStatus().then((res: any) => {
+        setIsDriveConnected(res.connected);
+      }).catch(() => setIsDriveConnected(false));
+    }
+  }, [isElectron, electron]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -126,6 +144,72 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   };
 
   const closeEditor = () => { setEditing(null); setIsCreating(false); };
+
+  const handleLogin = async () => {
+    if (!isElectron || !(window as any).electron?.googleLogin) return;
+    setIsSyncing(true);
+    try {
+      const result = await (window as any).electron.googleLogin();
+      if (result.success) {
+        setIsDriveConnected(true);
+        toast({
+          title: "Google Drive Connected",
+          description: "Your templates are now ready to sync with the cloud.",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Login Failed",
+        description: err.message || "Could not connect to Google Drive.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const executeSync = async (strategy: 'merge' | 'push' | 'pull') => {
+    setIsSyncing(true);
+    setConfirmDialog(prev => ({ ...prev, open: false }));
+
+    try {
+      await (window as any).electron.syncCloud(strategy);
+      const msg = strategy === 'push'
+        ? 'Local templates uploaded to Cloud.'
+        : strategy === 'pull'
+          ? 'Cloud templates downloaded to device.'
+          : 'Your templates are now in sync.';
+
+      toast({
+        title: strategy === 'merge' ? 'Sync Complete' : (strategy === 'push' ? 'Push Complete' : 'Pull Complete'),
+        description: msg,
+      });
+
+      if (electron?.getTemplates) {
+        const tpls = await electron.getTemplates();
+        setTemplates(tpls?.length ? tpls : loadLocalTemplates());
+      }
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: err.message || "Could not sync with Google Drive.",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSync = async (strategy: 'merge' | 'push' | 'pull' = 'merge') => {
+    if (!isElectron || !(window as any).electron?.syncCloud) return;
+
+    if (strategy === 'push' || strategy === 'pull') {
+      setConfirmDialog({ open: true, action: strategy });
+      return;
+    }
+
+    executeSync(strategy);
+  };
 
   // ── Import file via native <input type="file"> ──
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,28 +323,75 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
     <div className="w-full flex flex-col gap-4 h-full">
 
       {/* Header */}
-      {!embedded ? (
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-violet-600" /> Report Templates
-          </h2>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={openCreate}
-              className="h-7 px-3 text-[11px] font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl gap-1.5 shadow-sm">
-              <Plus className="h-3 w-3" /> New Template
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+          <FileText className="h-4 w-4 text-violet-600" /> Report Templates
+        </h2>
+        <div className="flex items-center gap-2">
+          {isElectron && isDriveConnected ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSyncing}
+                  className="h-7 px-2 text-[10px] font-bold border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center gap-1.5 rounded-lg shadow-sm"
+                >
+                  {isSyncing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Cloud className="h-3 w-3" />}
+                  {isSyncing ? "Syncing..." : "Cloud Sync"}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-2 bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-xl rounded-xl" align="start">
+                <div className="flex flex-col gap-1">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2 py-1">Sync Options</p>
+                  <button
+                    onClick={() => handleSync('push')}
+                    className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 rounded-lg transition-colors text-left"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+                      <CloudUpload className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold">Push to Cloud</div>
+                      <div className="text-[10px] opacity-70">Overwrite cloud files</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleSync('pull')}
+                    className="flex items-center gap-3 w-full px-2 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-violet-50 dark:hover:bg-blue-900/20 hover:text-violet-600 rounded-lg transition-colors text-left"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+                      <CloudDownload className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold">Pull from Cloud</div>
+                      <div className="text-[10px] opacity-70">Overwrite local templates</div>
+                    </div>
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : isElectron ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogin}
+              disabled={isSyncing}
+              className="h-7 px-2 text-[10px] font-bold border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center gap-1.5 rounded-lg shadow-sm"
+            >
+              {isSyncing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Cloud className="h-3 w-3" />}
+              {isSyncing ? "Connecting..." : "Connect Cloud"}
             </Button>
-            <Button variant="ghost" size="sm" onClick={onBack}
-              className="text-[10px] h-7 px-2 hover:bg-slate-100 dark:hover:bg-slate-800">← Back</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-end px-1">
+          ) : null}
           <Button size="sm" onClick={openCreate}
             className="h-7 px-3 text-[11px] font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl gap-1.5 shadow-sm">
             <Plus className="h-3 w-3" /> New Template
           </Button>
+          <Button variant="ghost" size="sm" onClick={onBack}
+            className="text-[10px] h-7 px-2 hover:bg-slate-100 dark:hover:bg-slate-800">← Back</Button>
         </div>
-      )}
+      </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
 

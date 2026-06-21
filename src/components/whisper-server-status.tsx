@@ -36,8 +36,13 @@ export function WhisperServerStatus() {
 
     const handleRestart = async () => {
         setIsRestarting(true);
-        if ((window as any).electron) {
-            await (window as any).electron.restartWhisperServer();
+        try {
+            if ((window as any).electron) {
+                await (window as any).electron.restartWhisperServer();
+            }
+        } catch (error) {
+            console.error("Restart failed:", error);
+            setIsRestarting(false);
         }
     };
 

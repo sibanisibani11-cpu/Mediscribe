@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electron', {
   getModels: () => ipcRenderer.invoke('get-models'),
   downloadModel: (modelName) => ipcRenderer.invoke('download-model', modelName),
   setModel: (modelName) => ipcRenderer.invoke('set-model', modelName),
+  deleteModel: (modelName) => ipcRenderer.invoke('delete-model', modelName),
 
   // Check whisper status
   checkWhisperStatus: () => ipcRenderer.invoke('check-whisper-status'),
@@ -55,6 +56,7 @@ contextBridge.exposeInMainWorld('electron', {
   downloadOllamaModel: (modelName) => ipcRenderer.invoke('download-ollama-model', modelName),
   cancelOllamaDownload: (modelName) => ipcRenderer.invoke('cancel-ollama-download', modelName),
   setOllamaModel: (modelName) => ipcRenderer.invoke('set-ollama-model', modelName),
+  deleteOllamaModel: (modelName) => ipcRenderer.invoke('delete-ollama-model', modelName),
   toggleOllama: (enabled) => ipcRenderer.invoke('toggle-ollama', enabled),
   getOllamaEnabled: () => ipcRenderer.invoke('get-ollama-enabled'),
   formatWithOllama: (text, formatType) => ipcRenderer.invoke('format-with-ollama', text, formatType),
@@ -159,8 +161,12 @@ contextBridge.exposeInMainWorld('electron', {
   syncCloud: (strategy) => ipcRenderer.invoke('sync-cloud', strategy),
   getAutoSyncStatus: () => ipcRenderer.invoke('get-auto-sync-status'),
   toggleAutoSync: (enabled) => ipcRenderer.invoke('toggle-auto-sync', enabled),
-  appleLogin: () => ipcRenderer.invoke('apple-login'),
 
   // Check if running in Electron
-  isElectron: true
+  isElectron: true,
+  checkLocalVerifiedUser: (email) => ipcRenderer.invoke('check-local-verified-user', email),
+  addLocalVerifiedUser: (email) => ipcRenderer.invoke('add-local-verified-user', email),
+  localSimSignin: (email, password) => ipcRenderer.invoke('local-sim-signin', email, password),
+  localSimSignup: (email, password) => ipcRenderer.invoke('local-sim-signup', email, password),
+  setActiveUserEmail: (email) => ipcRenderer.invoke('set-active-user-email', email)
 });

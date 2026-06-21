@@ -35,6 +35,7 @@ interface OllamaModel {
     description: string;
     downloaded: boolean;
     active: boolean;
+    isDeletable?: boolean;
 }
 
 interface OllamaSelectorProps {
@@ -56,6 +57,11 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
     });
     const [confirmDownload, setConfirmDownload] = React.useState<OllamaModel | null>(null);
     const { toast } = useToast();
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const isElectron = typeof window !== 'undefined' && (window.electron?.isElectron === true || !!window.electron);
 
@@ -218,6 +224,49 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
         setOpen(false);
     };
 
+    const handleDelete = async (modelName: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (!isElectron) return;
+
+        try {
+            const result = await (window.electron as any).deleteOllamaModel(modelName);
+            if (result.success) {
+                toast({
+                    title: "Model Deleted",
+                    description: `${modelName} has been removed from your system.`,
+                });
+                await fetchModels();
+            } else {
+                toast({
+                    variant: "destructive",
+                    title: "Delete Failed",
+                    description: result.error || "Could not delete the model",
+                });
+            }
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: "Delete Error",
+                description: error instanceof Error ? error.message : "Unknown error",
+            });
+        }
+    };
+
+    if (!mounted) {
+        return (
+            <Button
+                variant="outline"
+                size="sm"
+                className="h-9 justify-start gap-2 border-yellow-200 bg-yellow-50/50 hover:bg-yellow-100 dark:bg-yellow-950/20 dark:border-yellow-900/50 dark:hover:bg-yellow-950/30 flex-1"
+            >
+                <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                <span className="text-xs font-medium whitespace-nowrap text-yellow-700 dark:text-yellow-400">
+                    Ollama Starting...
+                </span>
+            </Button>
+        );
+    }
+
     if (!isElectron || !ollamaStatus.installed || !ollamaStatus.running) {
         // ... existing installation button ...\
         return (
@@ -355,8 +404,10 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                                                 <span className="text-slate-500 dark:text-slate-400 text-[10px] font-medium">{model.size}</span>
                                                             </div>
                                                         </div>
-                                                        <div className="w-8 flex justify-center shrink-0 ml-2">
-                                                            <Check className="h-4 w-4 text-green-500" />
+                                                        <div className="flex items-center gap-1 ml-2">
+                                                            <div className="w-8 flex justify-center shrink-0">
+                                                                <Check className="h-4 w-4 text-green-500" />
+                                                            </div>
                                                         </div>
                                                     </div>
                                                     <p className="text-[10px] text-slate-500 dark:text-slate-400 ml-6 line-clamp-1">{model.description}</p>
@@ -370,22 +421,21 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                     const displayProgress = progress ?? 0;
 
                                     return (
-                                        <CommandItem
+                                        <div
                                             key={model.name}
-                                            value={model.name.toLowerCase()}
-                                            onSelect={async () => {
-                                                if (onEnabledChange) onEnabledChange(true);
-                                                if (isElectron) await (window.electron as any).toggleOllama(true);
-                                                handleDownloadRequest(model);
-                                            }}
                                             className="relative flex flex-col items-start justify-start gap-2 px-0 py-0 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full"
+                                            onClick={() => {
+                                                if (!isDownloading && downloading !== model.name) {
+                                                    handleDownloadRequest(model);
+                                                }
+                                            }}
                                         >
                                             <div className="w-full p-2 cursor-pointer">
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-4 h-4 mr-2 shrink-0" />
                                                     <div className="flex-1 flex flex-col gap-1">
                                                         <div className="flex items-center justify-between">
-                                                            <span className="text-slate-900 dark:text-slate-100 font-bold">{model.name}</span>
+                                                            <span className="text-slate-900 dark:text-slate-100 font-bold hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer">{model.name}</span>
                                                             <span className="text-slate-500 dark:text-slate-400 text-[10px] font-medium">{model.size}</span>
                                                         </div>
                                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{model.description}</p>
@@ -410,11 +460,23 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                                                 ? "hover:bg-red-500/10 hover:text-red-600 text-slate-400"
                                                                 : "hover:bg-purple-500/10 hover:text-purple-600"
                                                         )}
-                                                        onPointerDown={(e) => {
-                                                            e.stopPropagation();
-                                                        }}
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
+                                                            e.preventDefault();
+                                                            if (isDownloading) {
+                                                                handleCancel(model.name, e);
+                                                            } else {
+                                                                handleDownload(model.name, e);
+                                                            }
+                                                        }}
+                                                        onPointerDown={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
+                                                            if (isDownloading) {
+                                                                handleCancel(model.name, e);
+                                                            } else {
+                                                                handleDownload(model.name, e);
+                                                            }
                                                         }}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -438,12 +500,30 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                                     </Button>
                                                 </div>
                                             </div>
-                                        </CommandItem>
+                                        </div>
                                     );
                                 })}
                             </CommandGroup>
                         </CommandList>
                     </Command>
+                    {enabled && activeModel && models.find((m) => m.name === activeModel)?.isDeletable && (
+                        <div className="border-t p-2 flex items-center justify-between bg-muted/20">
+                            <span className="text-[10px] text-muted-foreground truncate max-w-[180px]">
+                                Active: {activeModel}
+                            </span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete(activeModel);
+                                }}
+                            >
+                                Uninstall Model
+                            </Button>
+                        </div>
+                    )}
                 </PopoverContent>
             </Popover>
 

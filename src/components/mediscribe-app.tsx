@@ -12,6 +12,8 @@ import { useTheme } from "next-themes";
 import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
+import { db, isFirebaseConfigured } from "../lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -25,7 +27,6 @@ export function MediScribeApp() {
   const { theme, setTheme } = useTheme();
   const [isMounted, setIsMounted] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [hasSkippedTrialLock, setHasSkippedTrialLock] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<AppView>('landing');
@@ -35,13 +36,46 @@ export function MediScribeApp() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [autoStartView, setAutoStartView] = useState<'keyword' | 'templates' | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [updateState, setUpdateState] = useState<{
+    status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error';
+    version?: string;
+    percent?: number;
+    message?: string;
+  }>({ status: 'idle' });
 
   const { toast } = useToast();
   const EXPIRATION_DATE = new Date('2026-04-01'); // Expires after 31st March (i.e., on April 1st)
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
-  const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true';
+  const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true' && currentUser === 'jeetumdc@gmail.com';
+
+  useEffect(() => {
+    if (isElectron) {
+      const unsubscribe = (window.electron as any).onUpdateStatus?.((data: any) => {
+        setUpdateState(data);
+        if (data.status === 'downloaded') {
+          toast({
+            title: "Update Ready!",
+            description: `Version ${data.version} has been downloaded. Click 'Update Now' in the header to apply.`,
+          });
+        }
+      });
+
+      // Check for updates
+      (window.electron as any).checkForUpdates?.().catch(console.error);
+
+      return () => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      };
+    }
+  }, [isElectron]);
+
+  useEffect(() => {
+    if (isElectron) {
+      (window.electron as any).setActiveUserEmail?.(currentUser);
+    }
+  }, [currentUser, isElectron]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -50,14 +84,6 @@ export function MediScribeApp() {
       const hasSeenWhatsNew = localStorage.getItem('mediscribe_seen_v1.1.0_whatsnew');
       if (!hasSeenWhatsNew) {
         setShowWhatsNew(true);
-      }
-    }
-
-    // Check for trial expiration - skip if lifetime free
-    if (!isLifetimeFree) {
-      const now = new Date();
-      if (now > EXPIRATION_DATE) {
-        setIsExpired(true);
       }
     }
 
@@ -73,19 +99,6 @@ export function MediScribeApp() {
 
     // Get initial states from Electron
     if (isElectron) {
-      // Check Activation Status - always true if lifetime free
-      if (isLifetimeFree) {
-        setIsActivated(true);
-      } else {
-        (window.electron as any).checkActivation?.().then((active: boolean) => {
-          setIsActivated(active);
-        }).catch(() => setIsActivated(false));
-
-        (window.electron as any).getLicenseDetails?.().then((details: any) => {
-          if (details) setLicenseDetails(details);
-        }).catch(() => {});
-      }
-
       // Check Full Screen Status
       (window.electron as any).isFullScreen?.().then((fs: boolean) => {
         setIsFullScreen(fs);
@@ -125,10 +138,72 @@ export function MediScribeApp() {
         (window.electron as any).removeAllListeners?.('typing-mode-change');
         (window.electron as any).removeAllListeners?.('toggle-recording');
       };
-    } else {
-      setIsActivated(true); // Default to true if not in Electron (for web dev)
     }
   }, [isElectron]);
+
+  // Separate useEffect to handle activation and trial expiration whenever currentUser/isLifetimeFree changes
+  useEffect(() => {
+    if (!isMounted) return;
+
+    if (isLifetimeFree) {
+      setIsActivated(true);
+      setIsExpired(false);
+      return;
+    }
+
+    // Check for trial expiration
+    const now = new Date();
+    if (now > EXPIRATION_DATE) {
+      setIsExpired(true);
+    } else {
+      setIsExpired(false);
+    }
+
+    let unsubscribeFirestore: (() => void) | null = null;
+
+    if (isFirebaseConfigured && db && currentUser) {
+      try {
+        unsubscribeFirestore = onSnapshot(doc(db, "users", currentUser), (docSnap: any) => {
+          const userData = docSnap.exists() ? docSnap.data() : null;
+          const active = !!(userData && userData.isActivated);
+          setIsActivated(active);
+          
+          if (userData && userData.licenseDetails) {
+            setLicenseDetails(userData.licenseDetails);
+          } else {
+            setLicenseDetails(null);
+          }
+        }, (error: any) => {
+          console.error("Firestore sync error:", error);
+        });
+      } catch (err) {
+        console.error("Failed to start Firestore subscription listener:", err);
+      }
+    } else {
+      // Fallback: Check local activation status via Electron
+      if (isElectron) {
+        (window.electron as any).checkActivation?.().then((active: boolean) => {
+          setIsActivated(active);
+        }).catch(() => setIsActivated(false));
+
+        (window.electron as any).getLicenseDetails?.().then((details: any) => {
+          if (details) {
+            setLicenseDetails(details);
+          } else {
+            setLicenseDetails(null);
+          }
+        }).catch(() => {});
+      } else {
+        setIsActivated(true); // Default to true if not in Electron (for web dev)
+      }
+    }
+
+    return () => {
+      if (unsubscribeFirestore) {
+        unsubscribeFirestore();
+      }
+    };
+  }, [isMounted, isElectron, currentUser, isLifetimeFree]);
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -142,9 +217,6 @@ export function MediScribeApp() {
 
   const handleViewChange = (view: AppView) => {
     setCurrentView(view);
-    if (isElectron && (view === 'keyword' || view === 'templates')) {
-      setAutoStartView(view);
-    }
     // Notify electron about view change if it relates to typing mode
     if (isElectron && (view === 'dictation' || view === 'keyword' || view === 'templates')) {
       (window.electron as any).setTypingMode(view === 'templates' ? 'template' : view);
@@ -188,6 +260,7 @@ export function MediScribeApp() {
         <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
           <PricingView 
             isActivated={isActivated}
+            currentUser={currentUser}
             onBack={() => {
               if (!isActivated && isExpired) {
                  // If expired, stay on pricing or back to landing which will show expiration
@@ -202,7 +275,7 @@ export function MediScribeApp() {
     );
   }
 
-  if (!isActivated && isExpired && !hasSkippedTrialLock) {
+  if (!isActivated && isExpired) {
     const hadPaidPlan = !!licenseDetails?.billing;
     const planLabel = licenseDetails?.billing === 'yearly' ? 'Annual' : licenseDetails?.billing === 'monthly' ? 'Monthly' : null;
     const expiryDate = licenseDetails?.expiresAt
@@ -251,25 +324,6 @@ export function MediScribeApp() {
             >
               {hadPaidPlan ? '🔄 Renew Subscription' : 'Subscribe Now'}
             </Button>
-
-            <Button
-              onClick={() => openExternalUrl('https://mediapp.store')}
-              variant="outline"
-              className="w-full h-14 border-white/10 bg-white/5 hover:bg-white/10 text-white font-bold text-lg rounded-2xl transition-all"
-            >
-              Get Latest Download
-            </Button>
-
-            <Button
-              onClick={() => {
-                setHasSkippedTrialLock(true);
-                setCurrentView('landing');
-              }}
-              variant="ghost"
-              className="w-full h-12 text-slate-400 hover:text-white hover:bg-white/5 font-bold rounded-2xl transition-all mt-2"
-            >
-              Skip for now
-            </Button>
           </div>
 
           <div className="mt-8 text-[10px] text-slate-600 font-bold uppercase tracking-widest">
@@ -307,13 +361,31 @@ export function MediScribeApp() {
           </div>
 
           <div className="flex items-center gap-2">
+            {updateState.status === 'downloaded' && (
+              <Button
+                onClick={() => (window as any).electron?.installUpdate?.()}
+                className="h-7 text-[9px] font-black bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse rounded-full px-2.5 shadow-sm transition-all shrink-0 cursor-pointer"
+              >
+                ✨ Update Ready
+              </Button>
+            )}
+            {updateState.status === 'downloading' && (
+              <div className="h-7 flex items-center justify-center text-[9px] font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-full px-2.5 shrink-0">
+                ⏳ Updating ({updateState.percent || 0}%)
+              </div>
+            )}
+            {updateState.status === 'available' && (
+              <div className="h-7 flex items-center justify-center text-[9px] font-bold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 rounded-full px-2.5 shrink-0">
+                ⏳ Downloading Update...
+              </div>
+            )}
             {currentUser && (
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer outline-none focus:ring-2 focus:ring-violet-500/50">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer outline-none focus:ring-2 focus:ring-violet-500/50">
                     <User className="h-3 w-3 text-violet-600" />
-                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 max-w-[100px] truncate">
-                      Profile
+                    <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 max-w-[140px] truncate" title={currentUser}>
+                      {currentUser}
                     </span>
                   </button>
                 </PopoverTrigger>
@@ -325,7 +397,9 @@ export function MediScribeApp() {
                       </div>
                       <div className="flex flex-col overflow-hidden min-w-0">
                         <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">User Profile</span>
-                        <span className="text-[10px] text-slate-500 font-medium truncate" title={currentUser}>{currentUser}</span>
+                        <div className="text-[10px] text-slate-500 font-semibold mt-0.5 truncate" title={currentUser}>
+                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Login ID:</span>{currentUser}
+                        </div>
                       </div>
                     </div>
                     
@@ -336,7 +410,7 @@ export function MediScribeApp() {
                           <>
                             <Crown className="h-4 w-4 text-emerald-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Pro Active {licenseDetails?.plan ? `(${licenseDetails.plan})` : ''}
+                              Pro Active {licenseDetails?.billing ? `(${licenseDetails.billing})` : ''}
                             </span>
                           </>
                         ) : isLifetimeFree ? (
@@ -351,6 +425,29 @@ export function MediScribeApp() {
                           </>
                         )}
                       </div>
+                      
+                      {isActivated && licenseDetails?.expiresAt && (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
+                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
+                          {new Date(licenseDetails.expiresAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </div>
+                      )}
+
+                      {!isActivated && !isLifetimeFree && (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
+                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
+                          {new Date('2026-03-31').toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}
+                        </div>
+                      )}
+
                       {!isActivated && !isLifetimeFree && (
                         <Button 
                           onClick={() => setCurrentView('pricing')} 
@@ -360,6 +457,54 @@ export function MediScribeApp() {
                         </Button>
                       )}
                     </div>
+
+                    {isElectron && (
+                      <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Application Update</div>
+                        {updateState.status === 'downloaded' ? (
+                          <Button
+                            onClick={() => (window as any).electron?.installUpdate?.()}
+                            className="w-full h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-sm shadow-emerald-500/20"
+                          >
+                            ✨ Install Update & Restart
+                          </Button>
+                        ) : updateState.status === 'downloading' ? (
+                          <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 justify-center py-1">
+                            <span>⏳ Downloading Update ({updateState.percent || 0}%)</span>
+                          </div>
+                        ) : updateState.status === 'available' ? (
+                          <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 justify-center py-1">
+                            <span>⏳ Downloading Update...</span>
+                          </div>
+                        ) : updateState.status === 'checking' ? (
+                          <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 justify-center py-1">
+                            <span>🔍 Checking for updates...</span>
+                          </div>
+                        ) : updateState.status === 'up-to-date' ? (
+                          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 justify-center py-1">
+                            <span>✅ App is up to date</span>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => {
+                              setUpdateState({ status: 'checking' });
+                              (window.electron as any).checkForUpdates?.().then((res: any) => {
+                                if (res && res.status === 'dev-mode') {
+                                  setUpdateState({ status: 'error', message: 'Not available in dev mode' });
+                                  toast({ title: "Dev Mode", description: "Auto-updater is disabled in dev mode." });
+                                }
+                              }).catch(() => {
+                                setUpdateState({ status: 'error' });
+                              });
+                            }}
+                            variant="outline"
+                            className="w-full h-8 text-xs font-bold border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg shadow-sm"
+                          >
+                            {updateState.status === 'error' ? 'Check Again' : 'Check for Updates'}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </PopoverContent>
               </Popover>
