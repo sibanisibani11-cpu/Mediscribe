@@ -1,40 +1,21 @@
-name: 🚀 Build Cross-Platform Installers
+name: Build Cross-Platform Installers
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - master
     tags:
       - 'v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────
-  # Wipe old artifacts first to keep storage usage low
-  # ─────────────────────────────────────────────────────────────────
-  cleanup:
-    name: 🧹 Clean up old artifacts
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete previous artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api repos/${{ github.repository }}/actions/artifacts \
-            --paginate --jq '.artifacts[].id' \
-            | xargs -I {} gh api -X DELETE \
-                repos/${{ github.repository }}/actions/artifacts/{} || true
-          echo "Cleanup done."
-
-  # ─────────────────────────────────────────────────────────────────
-  # Platform matrix build
-  # ─────────────────────────────────────────────────────────────────
   build:
-    name: 🔨 ${{ matrix.name }}
-    needs: cleanup
+    name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -42,104 +23,85 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            name: Windows (NSIS + portable + AppX)
             platform: win
             target_platform: win32
-
           - os: macos-latest
-            name: macOS (DMG + ZIP)
             platform: mac
             target_platform: darwin
-
           - os: ubuntu-latest
-            name: Linux (AppImage + deb)
             platform: linux
             target_platform: linux
 
     steps:
-      # ── 1. Source ────────────────────────────────────────────────
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Node ──────────────────────────────────────────────────
-      - name: Set up Node.js 20
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      # ── 3. Install ───────────────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
-      # ── 4. Write .env so the app can find runtime secrets ────────
+      # Write runtime secrets to .env so the packaged app can read them
       - name: Write .env file
         shell: bash
         run: |
-          cat > .env << 'EOF'
-          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-          RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
-          RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
-          NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
-          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-          NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
-          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-          NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
-          EOF
+          printf '%s\n' \
+            "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            "RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}" \
+            "RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}" \
+            "NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
+            "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            "NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
+            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
+            "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
+            "NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
+            > .env
+          echo ".env written successfully."
 
-      # ── 5. Generate icons ────────────────────────────────────────
       - name: Generate platform icons
         run: node scripts/generate-icons.js
 
-      # ── 6. Build Next.js (skip prebuild hooks — done manually) ──
-      - name: Build Next.js app
-        run: npm run build --ignore-scripts
+      - name: Build web app (Next.js)
+        run: npm run build
 
-      # ── 7. Rebuild native modules for the runner platform ───────
       - name: Rebuild native modules
         run: npx electron-builder install-app-deps
 
-      # ── 8. Bundle models / binaries / ffmpeg / whisper ──────────
-      - name: Bundle platform binaries
+      - name: Bundle models and binaries
         run: npm run prebuild
         env:
           TARGET_PLATFORM: ${{ matrix.target_platform }}
-          SKIP_ICON_GENERATION: 'true'   # already done in step 5
+          SKIP_ICON_GENERATION: 'true'
 
-      # ── 9. Build Electron installers ─────────────────────────────
-      #    • Tag push  → publish=always  (creates GitHub Release)
-      #    • Branch push / manual → publish=never (artifact only)
       - name: Build Electron installers
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # Optional code-signing – set these secrets to enable
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          [[ -n "${{ secrets.CSC_LINK }}" ]] && export CSC_LINK="${{ secrets.CSC_LINK }}"
+          [[ -n "${{ secrets.CSC_KEY_PASSWORD }}" ]] && export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
+          [[ -n "${{ secrets.APPLE_ID }}" ]] && export APPLE_ID="${{ secrets.APPLE_ID }}"
+          [[ -n "${{ secrets.APPLE_ID_PASSWORD }}" ]] && export APPLE_ID_PASSWORD="${{ secrets.APPLE_ID_PASSWORD }}"
+          [[ -n "${{ secrets.APPLE_TEAM_ID }}" ]] && export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          [[ -n "${{ secrets.WIN_CSC_LINK }}" ]] && export WIN_CSC_LINK="${{ secrets.WIN_CSC_LINK }}"
+          [[ -n "${{ secrets.WIN_CSC_KEY_PASSWORD }}" ]] && export WIN_CSC_KEY_PASSWORD="${{ secrets.WIN_CSC_KEY_PASSWORD }}"
+
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "Tag build – publishing to GitHub Releases..."
             npx electron-builder --${{ matrix.platform }} --publish=always
           else
-            echo "Branch build – packaging without publish..."
             npx electron-builder --${{ matrix.platform }} --publish=never
           fi
 
-      # ── 10. Upload artifacts ──────────────────────────────────────
-      - name: Upload installers
+      - name: Upload installers as artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: MediScribe-${{ matrix.platform }}-installers
-          retention-days: 3
+          retention-days: 7
           if-no-files-found: warn
           path: |
             dist-electron/*.exe
