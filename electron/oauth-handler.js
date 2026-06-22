@@ -70,7 +70,22 @@ async function authenticateWithGoogle() {
           const code = qs.get('code');
 
           res.setHeader('Content-Type', 'text/html');
-          res.end('<html><body style="font-family: sans-serif; text-align: center; padding-top: 50px;"><h1>Authentication successful!</h1><p>You have successfully logged in to MediScribe.</p><p>This window will close automatically.</p><script>setTimeout(() => window.close(), 1000);</script></body></html>');
+          res.end(`
+            <html>
+              <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 50px; background-color: #0f172a; color: #f8fafc;">
+                <div style="max-width: 400px; margin: 0 auto; padding: 30px; background: rgba(30, 41, 59, 0.5); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+                  <h1 style="color: #a78bfa; font-size: 24px; margin-bottom: 10px;">Authentication Successful!</h1>
+                  <p style="color: #94a3b8; font-size: 15px; line-height: 1.5;">You have successfully logged in to MediScribe.</p>
+                  <p style="color: #64748b; font-size: 13px; margin-top: 20px;">You can close this tab and return to the application.</p>
+                </div>
+                <script>
+                  setTimeout(() => {
+                    try { window.close(); } catch (e) {}
+                  }, 1500);
+                </script>
+              </body>
+            </html>
+          `);
 
           server.close();
 
@@ -85,38 +100,179 @@ async function authenticateWithGoogle() {
           saveToken(tokens);
 
           resolved = true;
+          if (authWindow && !authWindow.isDestroyed()) {
+            authWindow.close();
+          }
           resolve({ success: true, tokens, email: userInfo.data.email });
         }
       } catch (e) {
-        res.end('Authentication failed.');
+        res.setHeader('Content-Type', 'text/html');
+        res.end(`
+          <html>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 50px; background-color: #0f172a; color: #f8fafc;">
+              <div style="max-width: 400px; margin: 0 auto; padding: 30px; background: rgba(30, 41, 59, 0.5); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+                <h1 style="color: #ef4444; font-size: 24px; margin-bottom: 10px;">Authentication Failed</h1>
+                <p style="color: #94a3b8; font-size: 15px; line-height: 1.5;">An error occurred during authentication. Please try again.</p>
+              </div>
+            </body>
+          </html>
+        `);
         server.close();
-        if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+        if (authWindow && !authWindow.isDestroyed()) {
+          authWindow.close();
+        }
         reject(e);
       }
-    }).listen(11435, () => {
+    }).listen(11435, async () => {
       const authorizeUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: SCOPES,
         prompt: 'consent'
       });
 
+      // Open standard system browser
+      try {
+        await shell.openExternal(authorizeUrl);
+      } catch (err) {
+        console.error('Failed to open external browser:', err);
+      }
+
+      // Create a status/fallback window
       authWindow = new BrowserWindow({
-        width: 600,
-        height: 800,
+        width: 450,
+        height: 420,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
         alwaysOnTop: true,
-        title: 'Sign in with Google',
+        title: 'MediScribe Secure Sign-In',
+        autoHideMenuBar: true,
         webPreferences: {
           nodeIntegration: false,
           contextIsolation: true
         }
       });
 
-      // Use a standard Chrome user agent to avoid "browser not secure" blocks by Google
-      const userAgent = process.platform === 'win32'
-        ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Google Sign-In</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+              color: #f8fafc;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              overflow: hidden;
+              text-align: center;
+            }
+            .card {
+              background: rgba(15, 23, 42, 0.6);
+              backdrop-filter: blur(12px);
+              border: 1px solid rgba(255, 255, 255, 0.15);
+              border-radius: 24px;
+              padding: 32px;
+              max-width: 360px;
+              width: 85%;
+              box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+              animation: fadeIn 0.5s ease-out;
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(15px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            .logo {
+              font-size: 26px;
+              font-weight: 800;
+              background: linear-gradient(135deg, #a78bfa 0%, #c084fc 100%);
+              -webkit-background-clip: text;
+              -webkit-text-fill-color: transparent;
+              margin-bottom: 24px;
+              letter-spacing: -0.5px;
+            }
+            h2 {
+              font-size: 18px;
+              margin: 0 0 12px 0;
+              font-weight: 600;
+              color: #f1f5f9;
+            }
+            p {
+              font-size: 13px;
+              color: #94a3b8;
+              line-height: 1.6;
+              margin: 0 0 20px 0;
+            }
+            .spinner {
+              border: 3px solid rgba(255, 255, 255, 0.08);
+              width: 32px;
+              height: 32px;
+              border-radius: 50%;
+              border-left-color: #c084fc;
+              animation: spin 1s linear infinite;
+              margin: 0 auto 20px auto;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+            .btn {
+              display: inline-block;
+              background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+              color: white;
+              border: none;
+              padding: 11px 22px;
+              font-size: 13px;
+              font-weight: 600;
+              border-radius: 12px;
+              cursor: pointer;
+              transition: all 0.2s ease;
+              text-decoration: none;
+              box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
+            }
+            .btn:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 8px 16px rgba(124, 58, 237, 0.35);
+              background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+            }
+            .btn:active {
+              transform: translateY(0);
+            }
+            .footer {
+              margin-top: 24px;
+              font-size: 11px;
+              color: #64748b;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div class="logo">MediScribe</div>
+            <div class="spinner"></div>
+            <h2>Secure Authentication</h2>
+            <p>We have opened Google Sign-In in your system web browser to complete authentication securely.</p>
+            <p style="font-size: 12px; margin-bottom: 16px; color: #64748b;">If the page did not load, please click the button below:</p>
+            <a href="https://open-browser/" class="btn">Open in Browser</a>
+            <div class="footer">
+              You can close this window to cancel the login.
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
 
-      authWindow.loadURL(authorizeUrl, { userAgent });
+      authWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
+
+      authWindow.webContents.on('will-navigate', (event, url) => {
+        event.preventDefault();
+        shell.openExternal(authorizeUrl);
+      });
 
       authWindow.on('closed', () => {
         server.close();

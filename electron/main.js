@@ -122,6 +122,14 @@ ipcMain.handle('open-external', async (event, url) => {
 });
 
 ipcMain.handle('google-logout', async () => {
+    const email = getCurrentUserEmail();
+    if (email) {
+        try {
+            await removeDeviceFromRegistry(email);
+        } catch (e) {
+            console.error('[MediScribe] Error removing device on logout:', e);
+        }
+    }
     activeUserEmail = null;
     return logoutGoogle();
 });
@@ -345,6 +353,38 @@ async function checkDeviceLimit(email) {
     } catch (err) {
         console.error('[MediScribe] Device limit check failed:', err);
         return { success: true }; // Fallback to allow if cloud is down? Or deny? User said "allow registered only"
+    }
+}
+
+async function removeDeviceFromRegistry(email) {
+    const hwid = getMachineId();
+    console.log(`[MediScribe] Removing device ${hwid} from registry for ${email}`);
+    try {
+        if (!(await driveSync.initialize())) {
+            console.warn('[MediScribe] Cloud Drive not available to remove device.');
+            return false;
+        }
+
+        const remoteData = await driveSync.getRemoteData(DEVICE_REGISTRY_FILE);
+        let registry = remoteData || {};
+
+        if (registry[email]) {
+            const userDevices = registry[email];
+            const index = userDevices.indexOf(hwid);
+            if (index > -1) {
+                userDevices.splice(index, 1);
+                registry[email] = userDevices;
+
+                const tempPath = path.join(app.getPath('temp'), DEVICE_REGISTRY_FILE);
+                fs.writeFileSync(tempPath, JSON.stringify(registry, null, 2));
+                await driveSync.uploadFile(DEVICE_REGISTRY_FILE, tempPath);
+                console.log(`[MediScribe] Successfully removed device ${hwid} for ${email}`);
+            }
+        }
+        return true;
+    } catch (err) {
+        console.error('[MediScribe] Failed to remove device from registry:', err);
+        return false;
     }
 }
 

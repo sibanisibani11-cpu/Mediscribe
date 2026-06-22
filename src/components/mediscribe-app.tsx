@@ -205,7 +205,18 @@ export function MediScribeApp() {
     };
   }, [isMounted, isElectron, currentUser, isLifetimeFree]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Always call googleLogout via Electron — this removes the device from
+    // the cloud device registry (device_registry.json on Google Drive) so
+    // the slot is freed for all users, whether they signed in with Google
+    // OAuth or email/password. If Drive is not connected it's a silent no-op.
+    if (isElectron) {
+      try {
+        await (window.electron as any).googleLogout?.();
+      } catch (e) {
+        console.error('[MediScribe] Error during logout device cleanup:', e);
+      }
+    }
     setIsAuthenticated(false);
     setCurrentUser(null);
     setCurrentView('landing');
