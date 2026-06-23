@@ -50,8 +50,74 @@ async function bundleWhisper() {
                     console.warn(`   Could not set permissions: ${e.message}`);
                 }
             } else {
-                console.warn('⚠️  Whisper Server for Mac NOT found at resources/bin/whisper-server');
-                console.warn('   Please build whisper.cpp manually or provide the binary.');
+                console.log('⚠️  Whisper Server for Mac NOT found at resources/bin/whisper-server');
+                console.log('   Attempting to compile whisper.cpp from source (v1.8.2)...');
+
+                if (!fs.existsSync(TEMP_DIR)) {
+                    fs.mkdirSync(TEMP_DIR, { recursive: true });
+                }
+
+                const sourceUrl = 'https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.8.2.tar.gz';
+                const archivePath = path.join(TEMP_DIR, 'whisper-source.tar.gz');
+                const extractedDir = path.join(TEMP_DIR, 'source');
+
+                if (!fs.existsSync(extractedDir)) {
+                    fs.mkdirSync(extractedDir, { recursive: true });
+                }
+
+                try {
+                    console.log('⬇️  Downloading whisper.cpp source...');
+                    execSync(`curl -L -o "${archivePath}" "${sourceUrl}"`, { stdio: 'inherit' });
+
+                    console.log('📦 Extracting source...');
+                    execSync(`tar -xf "${archivePath}" -C "${extractedDir}" --strip-components=1`, { stdio: 'inherit' });
+
+                    console.log('🛠️  Configuring CMake (Universal Binary: x86_64 + arm64)...');
+                    execSync(`cmake -B "${extractedDir}/build" -S "${extractedDir}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DGGML_METAL_EMBED_LIBRARY=ON`, { stdio: 'inherit' });
+
+                    console.log('🔨 Compiling whisper-server target...');
+                    execSync(`cmake --build "${extractedDir}/build" --config Release --target whisper-server -j 4`, { stdio: 'inherit' });
+
+                    // Find where the binary was generated
+                    const possiblePaths = [
+                        path.join(extractedDir, 'build/bin/whisper-server'),
+                        path.join(extractedDir, 'build/bin/server'),
+                        path.join(extractedDir, 'build/examples/server/whisper-server'),
+                        path.join(extractedDir, 'build/examples/server/server')
+                    ];
+
+                    let foundBinary = null;
+                    for (const p of possiblePaths) {
+                        if (fs.existsSync(p)) {
+                            foundBinary = p;
+                            break;
+                        }
+                    }
+
+                    if (!foundBinary) {
+                        // Fallback: search recursively in the build folder
+                        try {
+                            const findRes = execSync(`find "${extractedDir}/build" -type f -name "whisper-server" -o -name "server"`).toString().trim().split('\n')[0];
+                            if (findRes && fs.existsSync(findRes)) {
+                                foundBinary = findRes;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (foundBinary) {
+                        fs.copyFileSync(foundBinary, macBinary);
+                        execSync(`chmod +x "${macBinary}"`);
+                        console.log('✅ Whisper Server for Mac compiled and installed successfully!');
+                    } else {
+                        throw new Error('Could not locate the compiled whisper-server binary in build directory.');
+                    }
+
+                } catch (e) {
+                    console.error('❌ Failed to compile whisper-server for Mac:', e.message);
+                    console.warn('   Ensure Xcode Command Line Tools and CMake are installed.');
+                } finally {
+                    removeDirSync(TEMP_DIR);
+                }
             }
             continue;
         }

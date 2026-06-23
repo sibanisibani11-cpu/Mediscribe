@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Pre-download and bundle Whisper models for offline distribution
- * This ensures doctors get a ready-to-use app without needing to download models
+ * Pre-download and bundle GGML Whisper models for offline distribution.
+ * This ensures the app has ready-to-use models (base.en and tiny) out of the box.
  */
 
 const fs = require('fs');
@@ -13,17 +13,14 @@ const { promisify } = require('util');
 
 const streamPipeline = promisify(pipeline);
 
-// Models to pre-download
 const MODELS = [
   {
-    name: 'faster-whisper-base.en',
-    base_url: 'https://huggingface.co/Systran/faster-whisper-base.en/resolve/main/',
-    files: [
-      'config.json',
-      'model.bin',
-      'tokenizer.json'
-    ],
-    dir: 'faster-whisper-base.en'
+    name: 'ggml-base.en.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin'
+  },
+  {
+    name: 'ggml-tiny.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin'
   }
 ];
 
@@ -61,7 +58,6 @@ async function downloadFile(url, filePath, progressCallback, maxRedirects = 10) 
       } else if ([301, 302, 307, 308].includes(response.statusCode)) {
         const redirectUrl = response.headers.location;
         if (redirectUrl) {
-          // Resolve relative redirect URLs against the base URL
           const fullRedirectUrl = new URL(redirectUrl, url).toString();
           downloadFile(fullRedirectUrl, filePath, progressCallback, maxRedirects - 1)
             .then(resolve)
@@ -83,46 +79,41 @@ async function downloadFile(url, filePath, progressCallback, maxRedirects = 10) 
 
 async function downloadModel(model) {
   console.log(`\n📦 Downloading model: ${model.name}`);
+  const filePath = path.join(CACHE_DIR, model.name);
 
-  const modelDir = path.join(CACHE_DIR, model.dir);
-  await ensureDir(modelDir);
-
-  for (const file of model.files) {
-    const url = model.base_url + file;
-    const filePath = path.join(modelDir, file);
-
-    if (fs.existsSync(filePath)) {
-      console.log(`   ✓ ${file} (cached)`);
-      continue;
-    }
-
-    process.stdout.write(`   📥 ${file}... `);
-
-    try {
-      let lastProgress = 0;
-      await downloadFile(url, filePath, (downloaded, total) => {
-        if (total) {
-          const progress = Math.floor((downloaded / total) * 100);
-          if (progress !== lastProgress && progress % 10 === 0) {
-            process.stdout.write(`${progress}% `);
-            lastProgress = progress;
-          }
-        }
-      });
-      console.log('✓');
-    } catch (error) {
-      console.log(`✗ Error: ${error.message}`);
-      // Clean up partial file
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      throw error;
+  if (fs.existsSync(filePath)) {
+    const stats = fs.statSync(filePath);
+    // Basic verification: check if file is non-empty and at least 50MB
+    if (stats.size > 50 * 1024 * 1024) {
+      console.log(`   ✓ ${model.name} (cached and valid)`);
+      return;
+    } else {
+      console.log(`   ⚠️  ${model.name} exists but is incomplete or invalid. Re-downloading...`);
+      fs.unlinkSync(filePath);
     }
   }
-}
 
-async function createModelIndex() {
-  // Not needed for simple file check
+  process.stdout.write(`   📥 ${model.name}... `);
+
+  try {
+    let lastProgress = 0;
+    await downloadFile(model.url, filePath, (downloaded, total) => {
+      if (total) {
+        const progress = Math.floor((downloaded / total) * 100);
+        if (progress !== lastProgress && progress % 10 === 0) {
+          process.stdout.write(`${progress}% `);
+          lastProgress = progress;
+        }
+      }
+    });
+    console.log('✓');
+  } catch (error) {
+    console.log(`✗ Error: ${error.message}`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    throw error;
+  }
 }
 
 async function main() {
@@ -133,7 +124,12 @@ async function main() {
   await ensureDir(CACHE_DIR);
 
   for (const model of MODELS) {
-    await downloadModel(model);
+    try {
+      await downloadModel(model);
+    } catch (e) {
+      console.error(`Failed to download ${model.name}: ${e.message}`);
+      // Don't fail the build if download fails, but warn.
+    }
   }
 
   console.log(`\n✅ Model bundling complete!`);
@@ -144,4 +140,4 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = { downloadModel, createModelIndex };
+module.exports = { downloadModel };

@@ -165,7 +165,7 @@
       "icon": "build/icon.png",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "notarize": false
     },
     "mas": {
@@ -173,7 +173,7 @@
       "entitlements": "build/entitlements.mas.plist",
       "entitlementsInherit": "build/entitlements.mas.inherit.plist",
       "provisioningProfile": "build/embedded.provisionprofile",
-      "hardenedRuntime": false
+      "hardenedRuntime": true
     },
     "win": {
       "target": [
