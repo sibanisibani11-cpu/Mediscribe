@@ -73,7 +73,7 @@ async function bundleWhisper() {
                     execSync(`tar -xf "${archivePath}" -C "${extractedDir}" --strip-components=1`, { stdio: 'inherit' });
 
                     console.log('🛠️  Configuring CMake (Universal Binary: x86_64 + arm64)...');
-                    execSync(`cmake -B "${extractedDir}/build" -S "${extractedDir}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DGGML_METAL_EMBED_LIBRARY=ON`, { stdio: 'inherit' });
+                    execSync(`cmake -B "${extractedDir}/build" -S "${extractedDir}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF`, { stdio: 'inherit' });
 
                     console.log('🔨 Compiling whisper-server target...');
                     execSync(`cmake --build "${extractedDir}/build" --config Release --target whisper-server -j 4`, { stdio: 'inherit' });

@@ -2696,22 +2696,38 @@ function startServerWithModel(serverPath, modelPath) {
             }
         });
 
-        // Give the server time to start (wait 2 seconds)
-        setTimeout(() => {
-            if (whisperServerProcess) {
-                // Test if server is responding
-                const http = require('http');
-                const req = http.get('http://127.0.0.1:8080/', (res) => {
-                    console.log('[Whisper Server] Health check passed - server is responding');
-                    setWhisperServerStatus('ready');
-                    whisperServerRestartCount = 0; // Reset on health check success
-                    startHealthCheck(serverPath, modelPath);
-                }).on('error', (err) => {
-                    console.warn('[Whisper Server] Health check failed:', err.message);
-                    console.warn('[Whisper Server] Server may need more time to start');
-                });
-            }
-        }, 2000);
+        // Poll the server until it is ready or times out (up to 45 seconds to support larger models like small.en)
+        const startTime = Date.now();
+        const maxWaitTime = 45000;
+        const pollInterval = 1000;
+
+        const checkReady = () => {
+            if (!whisperServerProcess) return;
+
+            const http = require('http');
+            const req = http.get('http://127.0.0.1:8080/', (res) => {
+                console.log('[Whisper Server] Health check passed - server is responding');
+                setWhisperServerStatus('ready');
+                whisperServerRestartCount = 0;
+                startHealthCheck(serverPath, modelPath);
+            });
+
+            req.on('error', (err) => {
+                const elapsed = Date.now() - startTime;
+                if (elapsed < maxWaitTime) {
+                    setTimeout(checkReady, pollInterval);
+                } else {
+                    console.error('[Whisper Server] Port 8080 failed to respond within timeout. Initial health check timed out.');
+                    setWhisperServerStatus('error');
+                }
+            });
+
+            req.setTimeout(800, () => {
+                req.destroy();
+            });
+        };
+
+        setTimeout(checkReady, pollInterval);
 
     } catch (error) {
            console.error('[MediScribe] Failed to spawn Whisper server:', error);
@@ -3976,7 +3992,9 @@ ipcMain.handle('download-model', async (event, modelName) => {
     const model = SUPPORTED_MODELS.find(m => m.name === modelName);
     if (!model) return { success: false, error: 'Model not found' };
 
-    const targetPath = getModelPath(modelName);
+    // Always download into the user data directory so bundled models are not overwritten
+    const fileName = `ggml-${modelName}.bin`;
+    const targetPath = path.join(app.getPath('userData'), 'models', fileName);
     const targetDir = path.dirname(targetPath);
 
     if (!fs.existsSync(targetDir)) {
@@ -4042,6 +4060,11 @@ ipcMain.handle('download-model', async (event, modelName) => {
 
                 response.on('end', () => {
                     file.end();
+                });
+
+                response.on('error', (err) => {
+                    file.end();
+                    fs.unlink(dest, () => reject(err));
                 });
 
                 file.on('error', (err) => {
@@ -4212,9 +4235,22 @@ ipcMain.handle('get-ollama-models', async () => {
 
                 // Combine with supported models list
                 const modelsList = SUPPORTED_OLLAMA_MODELS.map(model => {
-                    const isDownloaded = installedModels.some(name => name.includes(model.name.split(':')[0]));
+                    // First try exact match
+                    let installedName = installedModels.find(name => name === model.name);
+
+                    // If no exact match, try base name match (for tag variations)
+                    if (!installedName) {
+                        const baseName = model.name.split(':')[0];
+                        installedName = installedModels.find(name => {
+                            const nameBase = name.split(':')[0];
+                            return nameBase === baseName;
+                        });
+                    }
+
+                    const isDownloaded = !!installedName;
                     return {
                         ...model,
+                        installedName,
                         downloaded: isDownloaded,
                         active: isDownloaded && model.name === currentOllamaModel,
                         isDeletable: isDownloaded
@@ -4278,7 +4314,7 @@ ipcMain.handle('download-ollama-model', async (event, modelName) => {
 
             pullProcess.stdout.on('data', (data) => {
                 const output = data.toString();
-                console.log(`[Ollama] ${output.trim()}`);
+                console.log(`[Ollama stdout] ${output.trim()}`);
 
                 // Try to parse progress
                 // Ollama output can contain ANSI codes and multiple updates per chunk
@@ -4292,6 +4328,7 @@ ipcMain.handle('download-ollama-model', async (event, modelName) => {
 
                     if (!isNaN(progress) && progress !== lastProgress) {
                         lastProgress = progress;
+                        console.log(`[Ollama] Progress: ${progress}%`);
                         if (mainWindow && mainWindow.webContents) {
                             mainWindow.webContents.send('ollama-download-progress', {
                                 modelName,
@@ -4303,7 +4340,27 @@ ipcMain.handle('download-ollama-model', async (event, modelName) => {
             });
 
             pullProcess.stderr.on('data', (data) => {
-                console.error(`[Ollama Error] ${data}`);
+                const output = data.toString();
+                console.log(`[Ollama stderr] ${output.trim()}`);
+
+                // Ollama might send progress to stderr instead of stdout
+                const matches = output.match(/(\d{1,3})%/g);
+
+                if (matches && matches.length > 0) {
+                    const lastMatch = matches[matches.length - 1];
+                    const progress = parseInt(lastMatch.replace('%', ''));
+
+                    if (!isNaN(progress) && progress !== lastProgress) {
+                        lastProgress = progress;
+                        console.log(`[Ollama] Progress (from stderr): ${progress}%`);
+                        if (mainWindow && mainWindow.webContents) {
+                            mainWindow.webContents.send('ollama-download-progress', {
+                                modelName,
+                                progress
+                            });
+                        }
+                    }
+                }
             });
 
             pullProcess.on('error', (error) => {
@@ -4379,7 +4436,7 @@ ipcMain.handle('set-ollama-model', async (event, modelName) => {
 // Delete an Ollama model
 ipcMain.handle('delete-ollama-model', async (event, modelName) => {
     try {
-        const { exec } = require('child_process');
+        const { spawn, exec } = require('child_process');
         console.log(`[Ollama] Deleting model: ${modelName}`);
 
         // If deleting the active model, reset to empty string
@@ -4387,15 +4444,74 @@ ipcMain.handle('delete-ollama-model', async (event, modelName) => {
             currentOllamaModel = '';
         }
 
-        return new Promise((resolve, reject) => {
-            exec(`ollama rm ${modelName}`, (error, stdout, stderr) => {
-                if (error) {
-                    console.error(`[Ollama] Error deleting model: ${error.message}`);
-                    resolve({ success: false, error: error.message });
-                    return;
+        // Use bundled binary path (same as download handler)
+        const bundledPath = isDev
+            ? path.join(__dirname, '../resources/bin/ollama')
+            : path.join(process.resourcesPath, 'bin/ollama');
+        const ollamaBinaryPath = process.platform === 'win32' ? bundledPath + '.exe' : bundledPath;
+
+        if (!fs.existsSync(ollamaBinaryPath)) {
+            console.error(`[Ollama] Binary not found at: ${ollamaBinaryPath}`);
+            return { success: false, error: 'Ollama binary not found' };
+        }
+
+        // Resolve actual installed model name before deleting
+        const installedNames = await new Promise((resolve) => {
+            exec('curl -s http://localhost:11434/api/tags', (error, stdout) => {
+                if (error) return resolve([]);
+                try {
+                    const data = JSON.parse(stdout);
+                    resolve(data.models?.map(m => m.name) || []);
+                } catch (e) {
+                    resolve([]);
                 }
-                console.log(`[Ollama] Model deleted: ${modelName}`);
-                resolve({ success: true });
+            });
+        });
+
+        console.log(`[Ollama] All installed models:`, installedNames);
+
+        // First try exact match
+        let actualName = installedNames.find(name => name === modelName);
+
+        // If no exact match, try base name match (for tag variations)
+        if (!actualName) {
+            const baseName = modelName.split(':')[0];
+            actualName = installedNames.find(name => {
+                const nameBase = name.split(':')[0];
+                return nameBase === baseName;
+            });
+        }
+
+        console.log(`[Ollama] Looking for ${modelName}, found: ${actualName}`);
+
+        if (!actualName) {
+            return { success: false, error: `Model '${modelName}' not found. Installed models: ${installedNames.join(', ')}` };
+        }
+
+        console.log(`[Ollama] Resolved ${modelName} to installed name: ${actualName}`);
+
+        return new Promise((resolve) => {
+            const rmProcess = spawn(ollamaBinaryPath, ['rm', actualName]);
+            let stderr = '';
+
+            rmProcess.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            rmProcess.on('close', (code) => {
+                if (code === 0) {
+                    console.log(`[Ollama] Model deleted: ${actualName}`);
+                    resolve({ success: true });
+                } else {
+                    const errMsg = stderr.trim() || `Process exited with code ${code}`;
+                    console.error(`[Ollama] Error deleting model: ${errMsg}`);
+                    resolve({ success: false, error: errMsg });
+                }
+            });
+
+            rmProcess.on('error', (err) => {
+                console.error(`[Ollama] Spawn error deleting model: ${err.message}`);
+                resolve({ success: false, error: err.message });
             });
         });
     } catch (error) {
@@ -4716,11 +4832,29 @@ ipcMain.handle('format-with-ollama', async (event, text, formatType = 'clinical-
 // Set active model
 ipcMain.handle('set-model', async (event, modelName) => {
     const modelPath = getModelPath(modelName);
-    if (fs.existsSync(modelPath)) {
-        currentModel = modelName;
+    if (!fs.existsSync(modelPath)) {
+        return { success: false, error: 'Model not downloaded' };
+    }
+
+    if (currentModel === modelName) {
         return { success: true };
     }
-    return { success: false, error: 'Model not downloaded' };
+
+    currentModel = modelName;
+
+    // Restart the whisper server so it actually loads the newly selected model
+    if (whisperServerProcess) {
+        whisperServerProcess.kill();
+        whisperServerProcess = null;
+    }
+    stopHealthCheck();
+    setWhisperServerStatus('stopped');
+    whisperServerRestartCount = 0;
+    setTimeout(() => {
+        startWhisperServer();
+    }, 500);
+
+    return { success: true };
 });
 
 // Delete a Whisper model
@@ -4731,13 +4865,39 @@ ipcMain.handle('delete-model', async (event, modelName) => {
             return { success: false, error: 'Model file not found' };
         }
 
-        // If deleting the active model, reset to default 'base.en'
-        if (currentModel === modelName) {
-            currentModel = 'base.en';
+        const wasActive = currentModel === modelName;
+
+        // If deleting the active model, reset to a valid downloaded model or empty
+        if (wasActive) {
+            const basePath = getModelPath('base.en');
+            if (fs.existsSync(basePath)) {
+                currentModel = 'base.en';
+            } else {
+                const fallback = SUPPORTED_MODELS.find(m => {
+                    if (m.name === modelName) return false;
+                    return fs.existsSync(getModelPath(m.name));
+                });
+                currentModel = fallback ? fallback.name : '';
+            }
         }
 
         fs.unlinkSync(modelPath);
         console.log(`[MediScribe] Deleted model: ${modelName}`);
+
+        // Restart the server so it does not keep using the deleted model
+        if (wasActive) {
+            if (whisperServerProcess) {
+                whisperServerProcess.kill();
+                whisperServerProcess = null;
+            }
+            stopHealthCheck();
+            setWhisperServerStatus('stopped');
+            whisperServerRestartCount = 0;
+            setTimeout(() => {
+                startWhisperServer();
+            }, 500);
+        }
+
         return { success: true };
     } catch (error) {
         console.error(`[MediScribe] Error deleting model: ${error.message}`);

@@ -43,6 +43,8 @@ export function ModelSelector({ className }: ModelSelectorProps) {
   const [serverStatus, setServerStatus] = React.useState<string>("stopped");
   const { toast } = useToast();
   const [mounted, setMounted] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<string | null>(null);
+  const deletingRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     setMounted(true);
@@ -64,6 +66,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       setModels(modelList);
       const active = modelList.find((m: Model) => m.active);
       if (active) setActiveModel(active.name);
+      else setActiveModel("");
       setLoading(false);
     } catch (error) {
       console.error("Failed to fetch models", error);
@@ -172,33 +175,23 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     });
 
     try {
-      const result = await (window.electron as any).downloadModel(modelName);
-      if (result.success) {
-        toast({
-          title: "Download Complete",
-          description: `${modelName} is now available.`,
-        });
-        await fetchModels();
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Download Failed",
-          description: result.error || "Unknown error occurred",
-        });
-      }
+      await (window.electron as any).downloadModel(modelName);
+      // Progress, completion, and errors are handled by event listeners
     } catch (error) {
+      setDownloading(null);
       toast({
         variant: "destructive",
         title: "Download Error",
         description: error instanceof Error ? error.message : "Unknown error",
       });
-    } finally {
-      setDownloading(null);
     }
   };
 
+  const selectingRef = React.useRef(false);
+
   const handleSelect = async (modelName: string) => {
     if (!isElectron) return;
+    if (selectingRef.current) return;
 
     const model = models.find(m => m.name === modelName);
     if (!model) return;
@@ -212,6 +205,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       return;
     }
 
+    selectingRef.current = true;
     try {
       const result = await (window.electron as any).setModel(modelName);
       if (result.success) {
@@ -231,13 +225,17 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      selectingRef.current = false;
     }
   };
 
-  const handleDelete = async (modelName: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!isElectron) return;
+  const handleDelete = React.useCallback(async (modelName: string) => {
+    // Use ref to avoid stale closure — works correctly from capture listener
+    if (!isElectron || deletingRef.current) return;
 
+    deletingRef.current = modelName;
+    setDeleting(modelName);
     try {
       const result = await (window.electron as any).deleteModel(modelName);
       if (result.success) {
@@ -259,8 +257,59 @@ export function ModelSelector({ className }: ModelSelectorProps) {
         title: "Delete Error",
         description: error instanceof Error ? error.message : "Unknown error",
       });
+    } finally {
+      deletingRef.current = null;
+      setDeleting(null);
     }
-  };
+  }, [isElectron, fetchModels, toast]);
+
+  const handleDeleteRef = React.useRef(handleDelete);
+  React.useEffect(() => {
+    handleDeleteRef.current = handleDelete;
+  }, [handleDelete]);
+
+  React.useEffect(() => {
+    const handleGlobalCapture = (e: Event) => {
+      const target = e.target as HTMLElement;
+      const deleteBtn = target.closest('[data-delete-btn]');
+      if (deleteBtn) {
+        // Prevent event from bubble/capture propagation so parent CommandItems are isolated
+        e.stopPropagation();
+        
+        if (e.type === 'click' || e.type === 'keydown') {
+          e.preventDefault();
+        }
+
+        if (e.type === 'click') {
+          const modelName = deleteBtn.getAttribute('data-model-name');
+          if (modelName) {
+            handleDeleteRef.current(modelName);
+          }
+        }
+      }
+    };
+
+    const events = [
+      'click',
+      'mousedown',
+      'mouseup',
+      'pointerdown',
+      'pointerup',
+      'touchstart',
+      'touchend',
+      'keydown'
+    ];
+
+    events.forEach(evt => {
+      document.addEventListener(evt, handleGlobalCapture, { capture: true });
+    });
+
+    return () => {
+      events.forEach(evt => {
+        document.removeEventListener(evt, handleGlobalCapture, { capture: true });
+      });
+    };
+  }, []);
 
   if (isElectron && models.length === 0 && !loading) {
     return (
@@ -334,24 +383,34 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       <PopoverContent className="w-[300px] p-0" align="start">
         <Command
           shouldFilter={true}
+          disablePointerSelection
         >
           <CommandInput placeholder="Search models..." autoFocus />
           <CommandList>
             <CommandEmpty>No model found.</CommandEmpty>
             <CommandGroup heading="Available Models">
               {models.map((model) => {
-                // If model is downloaded, render as selectable CommandItem
+                // If model is downloaded, render as selectable CommandItem (same style as Ollama)
                 if (model.downloaded) {
                   return (
-                    <CommandItem
+                    <div
                       key={model.name}
-                      value={model.name.toLowerCase()}
-                      onSelect={() => handleSelect(model.name)}
+                      role="button"
+                      tabIndex={0}
                       className={cn(
-                        "text-xs cursor-pointer outline-none transition-all duration-75 flex items-center justify-start w-full text-left gap-2 py-2.5",
-                        "hover:bg-accent hover:text-accent-foreground active:scale-[0.98] active:bg-accent/50",
+                        "relative flex items-center justify-start gap-2 px-2 py-2.5 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full text-left",
                         activeModel === model.name && "bg-purple-500/10 text-purple-700 dark:text-purple-400 font-semibold border-l-2 border-purple-500 pl-1"
                       )}
+                      onClick={() => {
+                        console.log("[ModelSelector] downloaded click", model.name);
+                        handleSelect(model.name);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelect(model.name);
+                        }
+                      }}
                     >
                       <Check
                         className={cn(
@@ -361,12 +420,10 @@ export function ModelSelector({ className }: ModelSelectorProps) {
                       />
                       <span className="font-semibold text-slate-900 dark:text-slate-100 flex-1 truncate">{model.name}</span>
                       <span className="text-slate-500 dark:text-slate-400 text-[10px] font-medium whitespace-nowrap ml-auto">{model.size}</span>
-                      <div className="flex items-center gap-1 ml-2">
-                        <div className="w-8 flex justify-center shrink-0">
-                          <Check className="h-4 w-4 text-green-500" />
-                        </div>
+                      <div className="w-6 flex justify-center shrink-0">
+                        <Check className="h-4 w-4 text-green-500" />
                       </div>
-                    </CommandItem>
+                    </div>
                   );
                 }
 
@@ -441,22 +498,41 @@ export function ModelSelector({ className }: ModelSelectorProps) {
             </CommandGroup>
           </CommandList>
         </Command>
-        {activeModel && models.find((m) => m.name === activeModel)?.isDeletable && (
-          <div className="border-t p-2 flex items-center justify-between bg-muted/20">
-            <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">
-              Active: {activeModel}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(activeModel);
-              }}
-            >
-              Uninstall Model
-            </Button>
+        {models.some((m) => m.isDeletable) && (
+          <div className="border-t bg-muted/10">
+            <div className="px-2 pt-2 pb-0.5">
+              <span className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">Installed Models</span>
+            </div>
+            {models.filter((m) => m.isDeletable).map((m) => (
+              <div key={m.name} className="flex items-center justify-between px-2 py-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className={cn(
+                    "w-1.5 h-1.5 rounded-full shrink-0",
+                    activeModel === m.name && serverStatus === 'ready' ? "bg-green-500" :
+                    activeModel === m.name && serverStatus === 'starting' ? "bg-yellow-500 animate-pulse" :
+                    activeModel === m.name ? "bg-slate-400" : "bg-slate-600"
+                  )} />
+                  <span className={cn(
+                    "text-[10px] truncate",
+                    activeModel === m.name ? "text-purple-600 dark:text-purple-400 font-semibold" : "text-muted-foreground"
+                  )}>{m.name}</span>
+                  <span className="text-[9px] text-muted-foreground/60 shrink-0">{m.size}</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={deleting === m.name}
+                  className="h-6 px-2 text-[10px] text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium shrink-0 ml-2"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(m.name);
+                  }}
+                >
+                  {deleting === m.name ? <Loader2 className="h-3 w-3 animate-spin" /> : "Uninstall"}
+                </Button>
+              </div>
+            ))}
+            <div className="pb-1" />
           </div>
         )}
       </PopoverContent>

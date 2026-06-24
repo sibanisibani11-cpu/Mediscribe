@@ -36,6 +36,7 @@ interface OllamaModel {
     downloaded: boolean;
     active: boolean;
     isDeletable?: boolean;
+    installedName?: string;
 }
 
 interface OllamaSelectorProps {
@@ -81,6 +82,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                 setModels(modelList);
                 const active = modelList.find((m: OllamaModel) => m.active);
                 if (active) setActiveModel(active.name);
+                else setActiveModel("");
             }
             setLoading(false);
         } catch (error) {
@@ -184,8 +186,11 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
         setConfirmDownload(model);
     };
 
+    const selectingRef = React.useRef(false);
+
     const handleSelect = async (modelName: string) => {
         if (!isElectron) return;
+        if (selectingRef.current) return;
 
         const model = models.find(m => m.name === modelName);
         if (!model || !model.downloaded) {
@@ -197,6 +202,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
             return;
         }
 
+        selectingRef.current = true;
         try {
             await (window.electron as any).setOllamaModel(modelName);
             setActiveModel(modelName);
@@ -208,6 +214,8 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
             await fetchModels();
         } catch (error) {
             console.error(error);
+        } finally {
+            selectingRef.current = false;
         }
     };
 
@@ -231,6 +239,9 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
         try {
             const result = await (window.electron as any).deleteOllamaModel(modelName);
             if (result.success) {
+                if (activeModel === modelName) {
+                    setActiveModel("");
+                }
                 toast({
                     title: "Model Deleted",
                     description: `${modelName} has been removed from your system.`,
@@ -328,7 +339,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[340px] p-0" align="start">
-                    <Command shouldFilter={true}>
+                    <Command shouldFilter={true} disablePointerSelection>
                         <CommandInput placeholder="Search models..." autoFocus />
                         <CommandList>
                             <CommandEmpty>No model found.</CommandEmpty>
@@ -377,18 +388,28 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                 {models.map((model) => {
                                     if (model.downloaded) {
                                         return (
-                                            <CommandItem
+                                            <div
                                                 key={model.name}
-                                                value={model.name.toLowerCase()}
-                                                onSelect={async () => {
+                                                role="button"
+                                                tabIndex={0}
+                                                className={cn(
+                                                    "relative flex flex-col items-start justify-start gap-1 px-0 py-0 text-xs hover:bg-accent hover:text-accent-foreground rounded-sm cursor-pointer outline-none transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full text-left",
+                                                    enabled && activeModel === model.name && "bg-purple-500/10 text-purple-700 dark:text-purple-400 font-bold border-l-2 border-purple-500 pl-1"
+                                                )}
+                                                onClick={async () => {
+                                                    console.log("[OllamaSelector] downloaded click", model.name);
                                                     if (onEnabledChange) onEnabledChange(true);
                                                     if (isElectron) await (window.electron as any).toggleOllama(true);
                                                     await handleSelect(model.name);
                                                 }}
-                                                className={cn(
-                                                    "text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground outline-none transform transition-all duration-75 active:scale-[0.98] active:bg-accent/50 w-full p-0",
-                                                    enabled && activeModel === model.name && "bg-purple-500/10 text-purple-700 dark:text-purple-400 font-bold border-l-2 border-purple-500 pl-1"
-                                                )}
+                                                onKeyDown={async (e) => {
+                                                    if (e.key === "Enter" || e.key === " ") {
+                                                        e.preventDefault();
+                                                        if (onEnabledChange) onEnabledChange(true);
+                                                        if (isElectron) await (window.electron as any).toggleOllama(true);
+                                                        await handleSelect(model.name);
+                                                    }
+                                                }}
                                             >
                                                 <div className="flex flex-col items-start justify-start gap-1 w-full p-2 cursor-pointer">
                                                     <div className="flex items-center w-full">
@@ -412,7 +433,7 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                                                     </div>
                                                     <p className="text-[10px] text-slate-500 dark:text-slate-400 ml-6 line-clamp-1">{model.description}</p>
                                                 </div>
-                                            </CommandItem>
+                                            </div>
                                         );
                                     }
 
@@ -506,24 +527,28 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
                             </CommandGroup>
                         </CommandList>
                     </Command>
-                    {enabled && activeModel && models.find((m) => m.name === activeModel)?.isDeletable && (
-                        <div className="border-t p-2 flex items-center justify-between bg-muted/20">
-                            <span className="text-[10px] text-muted-foreground truncate max-w-[180px]">
-                                Active: {activeModel}
-                            </span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDelete(activeModel);
-                                }}
-                            >
-                                Uninstall Model
-                            </Button>
-                        </div>
-                    )}
+                    {enabled && activeModel && (() => {
+                        const active = models.find((m) => m.name === activeModel);
+                        if (!active?.isDeletable) return null;
+                        return (
+                            <div className="border-t p-2 flex items-center justify-between bg-muted/20">
+                                <span className="text-[10px] text-muted-foreground truncate max-w-[180px]">
+                                    Active: {active.installedName || active.name}
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 font-medium"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete(active.name);
+                                    }}
+                                >
+                                    Uninstall Model
+                                </Button>
+                            </div>
+                        );
+                    })()}
                 </PopoverContent>
             </Popover>
 
