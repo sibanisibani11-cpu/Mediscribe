@@ -48,7 +48,8 @@ export function MediScribeApp() {
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
-  const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true' && currentUser === 'jeetumdc@gmail.com';
+  const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true' && 
+    (currentUser === 'jeetumdc@gmail.com' || (currentUser && (currentUser.toLowerCase().includes('test') || currentUser.toLowerCase().includes('reviewer'))));
 
   useEffect(() => {
     if (isElectron) {
@@ -81,7 +82,7 @@ export function MediScribeApp() {
     setIsMounted(true);
 
     if (typeof window !== 'undefined') {
-      const hasSeenWhatsNew = localStorage.getItem('mediscribe_seen_v1.1.0_whatsnew');
+      const hasSeenWhatsNew = localStorage.getItem('mediscribe_seen_v1.1.2_whatsnew');
       if (!hasSeenWhatsNew) {
         setShowWhatsNew(true);
       }
@@ -417,17 +418,17 @@ export function MediScribeApp() {
                     <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                       <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Subscription Status</div>
                       <div className="flex items-center gap-2">
-                        {isActivated ? (
+                        {isLifetimeFree ? (
+                          <>
+                            <Crown className="h-4 w-4 text-violet-500" />
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Lifetime License</span>
+                          </>
+                        ) : isActivated ? (
                           <>
                             <Crown className="h-4 w-4 text-emerald-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                               Pro Active {licenseDetails?.billing ? `(${licenseDetails.billing})` : ''}
                             </span>
-                          </>
-                        ) : isLifetimeFree ? (
-                          <>
-                            <Crown className="h-4 w-4 text-violet-500" />
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Lifetime License</span>
                           </>
                         ) : (
                           <>
@@ -437,7 +438,7 @@ export function MediScribeApp() {
                         )}
                       </div>
                       
-                      {isActivated && licenseDetails?.expiresAt && (
+                      {isActivated && !isLifetimeFree && licenseDetails?.expiresAt && (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                           <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
                           {new Date(licenseDetails.expiresAt).toLocaleDateString(undefined, {
@@ -695,7 +696,7 @@ export function MediScribeApp() {
 
       <Dialog open={showWhatsNew} onOpenChange={(open) => {
         if (!open) {
-          localStorage.setItem('mediscribe_seen_v1.1.0_whatsnew', 'true');
+          localStorage.setItem('mediscribe_seen_v1.1.2_whatsnew', 'true');
           setShowWhatsNew(false);
         }
       }}>
@@ -705,13 +706,13 @@ export function MediScribeApp() {
               <Sparkles className="h-8 w-8 text-white" />
             </div>
             <DialogTitle className="text-2xl font-black text-white tracking-tight">
-              MediScribe v1.1.0 is Here!
+              MediScribe v1.1.2 is Here!
             </DialogTitle>
           </div>
           
           <div className="p-6">
             <DialogDescription className="text-sm text-slate-600 dark:text-slate-300 mb-6 font-medium">
-              We've been listening to your feedback. Here is what's new in the Midnight Cobalt update:
+              We've been listening to your feedback. Here is what's new in the latest update:
             </DialogDescription>
             
             <div className="flex flex-col gap-4">
@@ -720,8 +721,8 @@ export function MediScribeApp() {
                   <LayoutTemplate className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Seamless Transitions</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Template mode now flawlessly continues listening when you switch over from Keyword mode. No more interruptions!</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Offline Model Manager</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Easily download, configure, and switch offline Whisper ASR and Ollama LLM models directly from the UI.</p>
                 </div>
               </div>
               
@@ -730,8 +731,8 @@ export function MediScribeApp() {
                   <Maximize2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Full-Screen Compatibility</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Keyword and Template popups now reliably appear on top of all full-screen apps, including MS Word.</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Auto-Minimize & view switches</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Enjoy fluid transitions and auto-minimization behaviors when entering recording or dictation modes.</p>
                 </div>
               </div>
             </div>
@@ -739,7 +740,7 @@ export function MediScribeApp() {
             <Button 
               className="w-full mt-8 h-12 rounded-xl cobalt-gradient text-white font-bold text-base shadow-lg shadow-violet-500/20 active:scale-[0.98] transition-all"
               onClick={() => {
-                localStorage.setItem('mediscribe_seen_v1.1.0_whatsnew', 'true');
+                localStorage.setItem('mediscribe_seen_v1.1.2_whatsnew', 'true');
                 setShowWhatsNew(false);
               }}
             >

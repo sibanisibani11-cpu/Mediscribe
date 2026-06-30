@@ -8,6 +8,7 @@ const nextConfig = (phase) => {
   const isDev = phase === PHASE_DEVELOPMENT_SERVER;
 
   return {
+    devIndicators: false,
     ...(isDev
       ? {
           assetPrefix: '',
