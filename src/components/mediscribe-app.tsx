@@ -134,10 +134,26 @@ export function MediScribeApp() {
         });
       });
 
+      // Listen for background device eviction
+      let cleanupEvicted: (() => void) | undefined;
+      if ((window.electron as any).onGoogleDeviceEvicted) {
+        cleanupEvicted = (window.electron as any).onGoogleDeviceEvicted((data: any) => {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          setCurrentView('landing');
+          toast({
+            variant: "destructive",
+            title: "Logged Out",
+            description: data?.message || "This device has been signed out because you logged in on another device.",
+          });
+        });
+      }
+
       return () => {
         (window.electron as any).removeAllListeners?.('fullscreen-change');
         (window.electron as any).removeAllListeners?.('typing-mode-change');
         (window.electron as any).removeAllListeners?.('toggle-recording');
+        if (cleanupEvicted) cleanupEvicted();
       };
     }
   }, [isElectron]);

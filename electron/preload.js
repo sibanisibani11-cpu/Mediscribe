@@ -161,6 +161,11 @@ contextBridge.exposeInMainWorld('electron', {
   syncCloud: (strategy) => ipcRenderer.invoke('sync-cloud', strategy),
   getAutoSyncStatus: () => ipcRenderer.invoke('get-auto-sync-status'),
   toggleAutoSync: (enabled) => ipcRenderer.invoke('toggle-auto-sync', enabled),
+  onGoogleDeviceEvicted: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('google-device-evicted', handler);
+    return () => ipcRenderer.removeListener('google-device-evicted', handler);
+  },
 
   // Check if running in Electron
   isElectron: true,

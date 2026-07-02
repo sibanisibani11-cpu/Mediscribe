@@ -320,6 +320,18 @@ async function checkDeviceLimit(email) {
     const hwid = getMachineId();
     console.log(`[MediScribe] Checking device limit for ${email} from device ${hwid}`);
 
+    if (email) {
+        const normalizedEmail = email.toLowerCase().trim();
+        if (
+            normalizedEmail === 'jeetumdc@gmail.com' ||
+            normalizedEmail.includes('test') ||
+            normalizedEmail.includes('reviewer')
+        ) {
+            console.log(`[MediScribe] Bypassing device limit check for developer/tester/reviewer email: ${email}`);
+            return { success: true };
+        }
+    }
+
     try {
         // We use a temporary local file to fetch/save registry
         const tempPath = path.join(app.getPath('temp'), DEVICE_REGISTRY_FILE);
@@ -342,10 +354,26 @@ async function checkDeviceLimit(email) {
 
         if (userDevices.length >= 2) {
             console.warn(`[MediScribe] Device limit reached for ${email}. Devices:`, userDevices);
-            return {
-                success: false,
-                error: 'Account Limit Reached: This account is already active on 2 other devices. Please log out from another device first.'
-            };
+            
+            const choice = dialog.showMessageBoxSync(mainWindow || BrowserWindow.getFocusedWindow(), {
+                type: 'question',
+                buttons: ['Continue & Log Out Other Device', 'Cancel'],
+                defaultId: 0,
+                cancelId: 1,
+                title: 'Device Limit Reached',
+                message: 'This account is already active on 2 other devices.',
+                detail: 'If you continue, this device will be registered and you will be automatically logged out of your oldest device. Do you want to continue?'
+            });
+
+            if (choice === 1) {
+                return {
+                    success: false,
+                    error: 'Device Limit Exceeded: Login cancelled by user.'
+                };
+            }
+
+            const evictedHwid = userDevices.shift();
+            console.log(`[MediScribe] Evicted oldest device ${evictedHwid} for ${email}`);
         }
 
         // Add this device
@@ -361,6 +389,49 @@ async function checkDeviceLimit(email) {
     } catch (err) {
         console.error('[MediScribe] Device limit check failed:', err);
         return { success: true }; // Fallback to allow if cloud is down? Or deny? User said "allow registered only"
+    }
+}
+
+async function checkRegistryBackground(email) {
+    if (!email) return;
+    const normalizedEmail = email.toLowerCase().trim();
+    if (
+        normalizedEmail === 'jeetumdc@gmail.com' ||
+        normalizedEmail.includes('test') ||
+        normalizedEmail.includes('reviewer')
+    ) {
+        return; // skip for developers
+    }
+
+    try {
+        // We need to wait a tiny bit to make sure windows are loaded
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        if (!(await driveSync.initialize())) return;
+
+        const remoteData = await driveSync.getRemoteData(DEVICE_REGISTRY_FILE);
+        if (!remoteData) return;
+
+        const userDevices = remoteData[email] || [];
+        const hwid = getMachineId();
+
+        if (!userDevices.includes(hwid)) {
+            console.warn(`[MediScribe] Device ${hwid} was evicted from registry for ${email}. Logging out.`);
+            
+            // Log out locally
+            await removeDeviceFromRegistry(email);
+            logoutGoogle();
+            activeUserEmail = null;
+
+            // Notify renderer
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('google-device-evicted', {
+                    message: 'You have been signed out because this account was connected on another device.'
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[MediScribe] Background registry check failed:', err);
     }
 }
 
@@ -2891,6 +2962,8 @@ app.whenReady().then(() => {
                     userEmail = payload.email || null;
                 } catch(e) {}
             }
+            // Asynchronously check registry in the background
+            checkRegistryBackground(userEmail).catch(console.error);
         }
         return { connected: !!token, userEmail };
     });

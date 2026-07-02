@@ -27,8 +27,19 @@ function getTokenFilePath() {
 function saveToken(token) {
   try {
     const tokenPath = getTokenFilePath();
-    const encryptedToken = safeStorage.encryptString(JSON.stringify(token));
-    fs.writeFileSync(tokenPath, encryptedToken);
+    let dataToWrite;
+    if (safeStorage.isEncryptionAvailable()) {
+      try {
+        dataToWrite = safeStorage.encryptString(JSON.stringify(token));
+      } catch (encryptError) {
+        console.warn('[OAuth] Encryption failed, falling back to plaintext storage:', encryptError);
+        dataToWrite = JSON.stringify({ _unencrypted: true, ...token });
+      }
+    } else {
+      console.warn('[OAuth] safeStorage encryption not available, storing plaintext');
+      dataToWrite = JSON.stringify({ _unencrypted: true, ...token });
+    }
+    fs.writeFileSync(tokenPath, dataToWrite);
     oauth2Client.setCredentials(token);
   } catch (e) {
     console.error('Failed to save token:', e);
@@ -39,8 +50,29 @@ function getToken() {
   try {
     const tokenPath = getTokenFilePath();
     if (fs.existsSync(tokenPath)) {
-      const encryptedToken = fs.readFileSync(tokenPath);
-      const tokenString = safeStorage.decryptString(encryptedToken);
+      const fileData = fs.readFileSync(tokenPath);
+      
+      // Try to parse as JSON first (plaintext fallback)
+      try {
+        const parsed = JSON.parse(fileData.toString('utf8'));
+        if (parsed && parsed._unencrypted) {
+          const token = { ...parsed };
+          delete token._unencrypted;
+          oauth2Client.setCredentials(token);
+          return token;
+        }
+      } catch (jsonErr) {
+        // Not plaintext JSON, proceed to decryption
+      }
+
+      let tokenString;
+      try {
+        tokenString = safeStorage.decryptString(fileData);
+      } catch (decryptError) {
+        console.error('[OAuth] Failed to decrypt token:', decryptError);
+        return null;
+      }
+      
       const token = JSON.parse(tokenString);
       oauth2Client.setCredentials(token);
       return token;

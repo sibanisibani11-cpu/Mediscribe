@@ -188,13 +188,6 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "appx",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
         }
       ],
       "icon": "build/icon.ico",
