@@ -20,7 +20,41 @@ try {
     console.warn('[MediScribe] uiohook-napi failed to load (keyword listener will be disabled):', err.message);
 }
 
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+// Load .env from multiple candidate paths to support both dev mode and packaged Windows/macOS builds
+// In a packaged app, __dirname is inside the asar archive which dotenv cannot read directly on Windows.
+// We therefore try several locations and stop at the first one that exists.
+(function loadDotEnv() {
+    const candidates = [
+        // Dev / unpacked: <project-root>/.env  (relative to electron/main.js → one level up)
+        path.join(__dirname, '../.env'),
+        // Packaged (NSIS/portable): resources/.env  (electron-builder copies files there)
+        path.join(process.resourcesPath || '', '.env'),
+        // Packaged (NSIS/portable): resources/app.asar.unpacked path (if extraFiles used)
+        path.join(process.resourcesPath || '', 'app.asar.unpacked', '.env'),
+        // Same directory as main.js (fallback)
+        path.join(__dirname, '.env'),
+    ];
+
+    let loaded = false;
+    for (const envPath of candidates) {
+        try {
+            if (fs.existsSync(envPath)) {
+                require('dotenv').config({ path: envPath });
+                console.log('[MediScribe] Loaded .env from:', envPath);
+                loaded = true;
+                break;
+            }
+        } catch (e) {
+            // continue trying next candidate
+        }
+    }
+
+    if (!loaded) {
+        // Last resort: let dotenv try its default search (CWD)
+        require('dotenv').config();
+        console.warn('[MediScribe] .env not found at known paths, using dotenv default search');
+    }
+}());
 const { authenticateWithGoogle, getToken, getDriveClient, logoutGoogle } = require('./oauth-handler');
 
 // ── Auto-Updater Setup ─────────────────────────────────────────────────────

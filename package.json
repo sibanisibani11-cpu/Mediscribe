@@ -142,6 +142,10 @@
       {
         "from": "resources/bin",
         "to": "bin"
+      },
+      {
+        "from": ".env",
+        "to": ".env"
       }
     ],
     "mac": {
@@ -200,7 +204,11 @@
       "publisher": "CN=0A2D2A72-696C-488D-AB42-7004DF21E0C2",
       "publisherDisplayName": "MediApp.store",
       "applicationId": "MediScribe",
-      "backgroundColor": "#1a1a2e"
+      "backgroundColor": "#1a1a2e",
+      "additionalCapabilities": [
+        "privateNetworkClientServer",
+        "internetClient"
+      ]
     },
     "linux": {
       "category": "Office",

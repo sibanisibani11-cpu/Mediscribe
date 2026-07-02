@@ -6,14 +6,41 @@ const app = require('electron').app;
 const http = require('http');
 const url = require('url');
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = 'http://localhost:11435/callback'; // A port unlikely to be used
 
-const oauth2Client = new google.auth.OAuth2(
-  GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
-  'http://localhost:11435/callback' // A port unlikely to be used
-);
+// Credentials are read lazily so that dotenv has time to populate process.env before
+// the OAuth client is constructed.  (In packaged Windows builds the .env is loaded
+// via a multi-path search in main.js; reading the values here at module-load time
+// would capture empty strings before that search completes.)
+let _oauth2Client = null;
+
+function getOAuth2Client() {
+    const clientId     = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+    // Re-create the client if the credentials have changed (or first call)
+    if (
+        !_oauth2Client ||
+        _oauth2Client._clientId     !== clientId ||
+        _oauth2Client._clientSecret !== clientSecret
+    ) {
+        _oauth2Client = new google.auth.OAuth2(clientId, clientSecret, GOOGLE_REDIRECT_URI);
+        // Attach the values so we can compare them on the next call
+        _oauth2Client._clientId     = clientId;
+        _oauth2Client._clientSecret = clientSecret;
+        // Re-attach token listener whenever we recreate the client
+        isTokenListenerSet = false;
+    }
+
+    return _oauth2Client;
+}
+
+// Expose a proxy so existing code that references `oauth2Client` still works
+const oauth2Client = new Proxy({}, {
+    get(_, prop) { return getOAuth2Client()[prop]; },
+    set(_, prop, value) { getOAuth2Client()[prop] = value; return true; },
+    apply(_, thisArg, args) { return getOAuth2Client()(...args); }
+});
 
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
@@ -84,12 +111,53 @@ function getToken() {
 }
 
 /**
+ * On Microsoft Store (AppX/MSIX) builds, the app runs inside an AppContainer sandbox
+ * which blocks loopback (localhost) connections by default.
+ * This function grants the exemption so our OAuth redirect server can work.
+ * It is a no-op on non-Windows and non-Store builds.
+ */
+function ensureLoopbackExemption() {
+  if (process.platform !== 'win32') return;
+  if (!process.windowsStore) return; // only AppX/MSIX — skip for NSIS/portable
+
+  try {
+    const { execSync } = require('child_process');
+    // Get the package SID for this AppContainer
+    const result = execSync(
+      'CheckNetIsolation.exe LoopbackExempt -s',
+      { encoding: 'utf8', timeout: 5000 }
+    );
+    // Check if already exempted (package family name contains our appId)
+    if (result.toLowerCase().includes('mediapp') || result.toLowerCase().includes('mediscribe')) {
+      console.log('[OAuth] AppX loopback exemption already active.');
+      return;
+    }
+    // Add the exemption (requires the app to be installed, which it will be from the Store)
+    execSync(
+      'CheckNetIsolation.exe LoopbackExempt -a -n="mediapp.MediScribe_*"',
+      { encoding: 'utf8', timeout: 5000 }
+    );
+    console.log('[OAuth] AppX loopback exemption granted successfully.');
+  } catch (e) {
+    // Non-fatal: the OAuth server may still work if exemption was previously granted,
+    // or if Windows grants it automatically for Electron apps in newer builds.
+    console.warn('[OAuth] Could not set AppX loopback exemption (may still work):', e.message);
+  }
+}
+
+/**
  * Handle OAuth flow by starting a temporary local server
  */
 async function authenticateWithGoogle() {
-  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes('YOUR_CLIENT_ID') || !GOOGLE_CLIENT_SECRET || GOOGLE_CLIENT_SECRET.includes('YOUR_CLIENT_SECRET')) {
+  const clientId     = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || clientId.includes('YOUR_CLIENT_ID') || !clientSecret || clientSecret.includes('YOUR_CLIENT_SECRET')) {
     throw new Error('Google Cloud Sync credentials (Client ID/Secret) are missing or not configured in your .env file.');
   }
+
+  // Ensure localhost is accessible inside AppX/MSIX sandbox (no-op outside Store)
+  ensureLoopbackExemption();
 
   return new Promise((resolve, reject) => {
     let authWindow = null;
