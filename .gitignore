@@ -33,6 +33,8 @@
 !/build/*.plist
 !/build/*.nsh
 !/build/*.png
+!/build/*.ico
+!/build/appx/
 
 # misc
 .DS_Store
