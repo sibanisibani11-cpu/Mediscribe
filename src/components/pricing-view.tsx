@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Shield, Star, Crown, ArrowRight, ArrowLeft, Loader2, Globe, Tag, X } from "lucide-react";
+import { Check, Shield, Star, Crown, ArrowRight, ArrowLeft, Loader2, Globe, Tag, X, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import { cn, openExternalUrl } from "../lib/utils";
@@ -12,6 +12,7 @@ interface PricingViewProps {
   onBack: () => void;
   isActivated?: boolean | null;
   currentUser?: string | null;
+  backButtonText?: string;
 }
 
 type Currency = {
@@ -69,7 +70,7 @@ function loadRazorpay(): Promise<boolean> {
   });
 }
 
-export function PricingView({ onBack, isActivated, currentUser }: PricingViewProps) {
+export function PricingView({ onBack, isActivated, currentUser, backButtonText }: PricingViewProps) {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
   const [activationId, setActivationID] = useState("");
@@ -413,7 +414,12 @@ export function PricingView({ onBack, isActivated, currentUser }: PricingViewPro
           onClick={onBack}
           className="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 px-0"
         >
-          <ArrowLeft className="h-4 w-4" /> Return to Dashboard
+          {backButtonText && backButtonText.toLowerCase().includes("log out") ? (
+            <LogOut className="h-4 w-4" />
+          ) : (
+            <ArrowLeft className="h-4 w-4" />
+          )}
+          {backButtonText || "Return to Dashboard"}
         </Button>
       </div>
       <div className="flex flex-col items-center text-center space-y-4">

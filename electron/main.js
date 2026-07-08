@@ -2936,7 +2936,7 @@ app.whenReady().then(() => {
         if (fs.existsSync(licensePath)) {
             const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
             if (data.email) {
-                console.log('[Licensing] Auto-generated Google license detected. Reverting to Trial Version for v1.0.3 transition.');
+                console.log('[Licensing] Auto-generated Google license detected. Reverting to Unactivated status for v1.0.3 transition.');
                 fs.unlinkSync(licensePath);
             }
         }

@@ -2,12 +2,12 @@
 
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
-import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, X, Maximize2, Minimize2, Info, Crown, LayoutTemplate, Sparkles } from "lucide-react";
+import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { useToast } from "../hooks/use-toast";
-import { cn, openExternalUrl } from "../lib/utils";
+import { cn } from "../lib/utils";
 import { useTheme } from "next-themes";
 import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
@@ -32,7 +32,7 @@ export function MediScribeApp() {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [licenseDetails, setLicenseDetails] = useState<any>(null);
-  const [isExpired, setIsExpired] = useState(false);
+  const [showPricingFromExpiration, setShowPricingFromExpiration] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [autoStartView, setAutoStartView] = useState<'keyword' | 'templates' | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -44,7 +44,6 @@ export function MediScribeApp() {
   }>({ status: 'idle' });
 
   const { toast } = useToast();
-  const EXPIRATION_DATE = new Date('2026-04-01'); // Expires after 31st March (i.e., on April 1st)
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
@@ -158,22 +157,13 @@ export function MediScribeApp() {
     }
   }, [isElectron]);
 
-  // Separate useEffect to handle activation and trial expiration whenever currentUser/isLifetimeFree changes
+  // Separate useEffect to handle activation whenever currentUser/isLifetimeFree changes
   useEffect(() => {
     if (!isMounted) return;
 
     if (isLifetimeFree) {
       setIsActivated(true);
-      setIsExpired(false);
       return;
-    }
-
-    // Check for trial expiration
-    const now = new Date();
-    if (now > EXPIRATION_DATE) {
-      setIsExpired(true);
-    } else {
-      setIsExpired(false);
     }
 
     let unsubscribeFirestore: (() => void) | null = null;
@@ -281,7 +271,69 @@ export function MediScribeApp() {
     }} />;
   }
 
-  // Show Pricing View even if expired
+  // Show Pricing View even if expired or for subscription requirement
+  if (!isActivated && !isLifetimeFree) {
+    const isSubscriptionExpired = !!licenseDetails?.expiresAt && new Date() > new Date(licenseDetails.expiresAt);
+
+    if (isSubscriptionExpired && !showPricingFromExpiration) {
+      const planLabel = licenseDetails?.billing === 'yearly' ? 'Annual' : licenseDetails?.billing === 'monthly' ? 'Monthly' : 'Pro';
+      const expiryDate = new Date(licenseDetails.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 font-sans">
+          <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden p-10 flex flex-col items-center text-center animate-in fade-in zoom-in duration-700">
+            <div className="w-20 h-20 bg-amber-500/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+              <Crown className="h-10 w-10 text-amber-400" />
+            </div>
+            <div className="px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 mb-4">
+              <span className="text-amber-400 text-[10px] font-black uppercase tracking-widest">{planLabel} Plan</span>
+            </div>
+            <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase italic">Subscription Expired</h1>
+            <p className="text-slate-400 text-sm leading-relaxed mb-4 px-4">
+              Your <span className="text-amber-400 font-bold">{planLabel} Pro subscription</span> expired on{' '}
+              <span className="text-white font-bold">{expiryDate}</span>. Renew now to continue using MediScribe Pro without interruption.
+            </p>
+            <p className="text-slate-500 text-xs mb-8 px-4">
+              All your keywords, dictionaries and settings are safely saved and will be restored instantly when you renew.
+            </p>
+            <div className="flex flex-col gap-4 w-full">
+              <Button
+                onClick={() => setShowPricingFromExpiration(true)}
+                className="w-full h-14 cobalt-gradient hover:opacity-90 text-white font-black text-lg rounded-2xl transition-all shadow-xl shadow-violet-500/20 active:scale-[0.98]"
+              >
+                🔄 Renew Subscription
+              </Button>
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                className="w-full h-10 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-wider"
+              >
+                Log Out
+              </Button>
+            </div>
+            <div className="mt-8 text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+              MediScribe Pro
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
+        <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
+          <PricingView 
+            isActivated={isActivated}
+            currentUser={currentUser}
+            onBack={isSubscriptionExpired ? () => setShowPricingFromExpiration(false) : handleLogout}
+            backButtonText={isSubscriptionExpired ? "Back" : "Log Out"}
+          />
+        </main>
+      </div>
+    );
+  }
+
+  // Show Pricing View for activated users
   if (currentView === 'pricing') {
     return (
       <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
@@ -289,75 +341,10 @@ export function MediScribeApp() {
           <PricingView 
             isActivated={isActivated}
             currentUser={currentUser}
-            onBack={() => {
-              if (!isActivated && isExpired) {
-                 // If expired, stay on pricing or back to landing which will show expiration
-                 setCurrentView('landing');
-              } else {
-                 setCurrentView('landing');
-              }
-            }} 
+            onBack={() => setCurrentView('landing')} 
+            backButtonText="Return to Dashboard"
           />
         </main>
-      </div>
-    );
-  }
-
-  if (!isActivated && isExpired) {
-    const hadPaidPlan = !!licenseDetails?.billing;
-    const planLabel = licenseDetails?.billing === 'yearly' ? 'Annual' : licenseDetails?.billing === 'monthly' ? 'Monthly' : null;
-    const expiryDate = licenseDetails?.expiresAt
-      ? new Date(licenseDetails.expiresAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-      : 'March 31, 2026';
-
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 font-sans">
-        <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden p-10 flex flex-col items-center text-center animate-in fade-in zoom-in duration-700">
-
-          {hadPaidPlan ? (
-            // ── Paid Subscription Expired ──
-            <>
-              <div className="w-20 h-20 bg-amber-500/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner">
-                <Crown className="h-10 w-10 text-amber-400" />
-              </div>
-              <div className="px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/30 mb-4">
-                <span className="text-amber-400 text-[10px] font-black uppercase tracking-widest">{planLabel} Plan</span>
-              </div>
-              <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase italic">Subscription Expired</h1>
-              <p className="text-slate-400 text-sm leading-relaxed mb-4 px-4">
-                Your <span className="text-amber-400 font-bold">{planLabel} Pro subscription</span> expired on{' '}
-                <span className="text-white font-bold">{expiryDate}</span>. Renew now to continue using MediScribe Pro without interruption.
-              </p>
-              <p className="text-slate-500 text-xs mb-8 px-4">
-                All your keywords, dictionaries and settings are safely saved and will be restored instantly when you renew.
-              </p>
-            </>
-          ) : (
-            // ── Free Trial Ended ──
-            <>
-              <div className="w-20 h-20 bg-red-500/20 rounded-2xl flex items-center justify-center mb-8 rotate-3 shadow-inner">
-                <X className="h-10 w-10 text-red-500" />
-              </div>
-              <h1 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase italic">Trial Ended</h1>
-              <p className="text-slate-400 text-sm leading-relaxed mb-10 px-4">
-                The beta trial period for this version reached its end on <span className="text-violet-400 font-bold text-nowrap">March 31, 2026</span>. Please subscribe or download the latest update to continue.
-              </p>
-            </>
-          )}
-
-          <div className="flex flex-col gap-4 w-full">
-            <Button
-              onClick={() => setCurrentView('pricing')}
-              className="w-full h-14 cobalt-gradient hover:opacity-90 text-white font-black text-lg rounded-2xl transition-all shadow-xl shadow-violet-500/20 active:scale-[0.98]"
-            >
-              {hadPaidPlan ? '🔄 Renew Subscription' : 'Subscribe Now'}
-            </Button>
-          </div>
-
-          <div className="mt-8 text-[10px] text-slate-600 font-bold uppercase tracking-widest">
-            MediScribe Pro
-          </div>
-        </div>
       </div>
     );
   }
@@ -373,18 +360,9 @@ export function MediScribeApp() {
             <div className="text-[10px] text-muted-foreground flex flex-col items-start leading-tight truncate w-full">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-violet-600 dark:text-violet-400 truncate">
-                  {isLifetimeFree ? "Lifetime License" : (isActivated ? "Pro License" : "Trial Version")}
+                  {isLifetimeFree ? "Lifetime License" : "Pro License"}
                 </span>
-                {!isActivated && !isLifetimeFree && (
-                  <button 
-                    onClick={() => setCurrentView('pricing')}
-                    className="text-[9px] font-black bg-violet-600 text-white px-1.5 py-0.5 rounded italic uppercase leading-none hover:bg-violet-700 transition-colors shadow-sm"
-                  >
-                    Upgrade
-                  </button>
-                )}
               </div>
-              {!isActivated && !isLifetimeFree && <span className="truncate">Valid until March 31, 2026</span>}
             </div>
           </div>
 
@@ -439,22 +417,17 @@ export function MediScribeApp() {
                             <Crown className="h-4 w-4 text-violet-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Lifetime License</span>
                           </>
-                        ) : isActivated ? (
+                        ) : (
                           <>
                             <Crown className="h-4 w-4 text-emerald-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                               Pro Active {licenseDetails?.billing ? `(${licenseDetails.billing})` : ''}
                             </span>
                           </>
-                        ) : (
-                          <>
-                            <Info className="h-4 w-4 text-amber-500" />
-                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Trial Version</span>
-                          </>
                         )}
                       </div>
                       
-                      {isActivated && !isLifetimeFree && licenseDetails?.expiresAt && (
+                      {!isLifetimeFree && licenseDetails?.expiresAt && (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                           <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
                           {new Date(licenseDetails.expiresAt).toLocaleDateString(undefined, {
@@ -463,26 +436,6 @@ export function MediScribeApp() {
                             day: 'numeric'
                           })}
                         </div>
-                      )}
-
-                      {!isActivated && !isLifetimeFree && (
-                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
-                          <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
-                          {new Date('2026-03-31').toLocaleDateString(undefined, {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}
-                        </div>
-                      )}
-
-                      {!isActivated && !isLifetimeFree && (
-                        <Button 
-                          onClick={() => setCurrentView('pricing')} 
-                          className="w-full mt-2 h-8 text-xs font-bold bg-violet-600 hover:bg-violet-700 rounded-lg shadow-sm shadow-violet-500/20"
-                        >
-                          Upgrade Now
-                        </Button>
                       )}
                     </div>
 
