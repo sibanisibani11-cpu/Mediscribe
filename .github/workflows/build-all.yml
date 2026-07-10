@@ -104,7 +104,7 @@ jobs:
           name: MediScribe-Windows-EXE
           path: dist-electron/*.exe
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload Windows MSI Installer
@@ -115,7 +115,7 @@ jobs:
           name: MediScribe-Windows-MSI
           path: dist-electron/*.msi
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload macOS DMG Installer
@@ -126,7 +126,7 @@ jobs:
           name: MediScribe-macOS-DMG
           path: dist-electron/*.dmg
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload macOS ZIP Artifact
@@ -137,7 +137,7 @@ jobs:
           name: MediScribe-macOS-ZIP
           path: dist-electron/*.zip
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload Linux AppImage Installer
@@ -148,7 +148,7 @@ jobs:
           name: MediScribe-Linux-AppImage
           path: dist-electron/*.AppImage
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload Linux DEB Installer
@@ -159,7 +159,7 @@ jobs:
           name: MediScribe-Linux-DEB
           path: dist-electron/*.deb
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
       - name: Upload Update Metadata
@@ -172,6 +172,6 @@ jobs:
             dist-electron/latest*.yml
             dist-electron/*.blockmap
           if-no-files-found: ignore
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 

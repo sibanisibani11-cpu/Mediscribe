@@ -60,7 +60,7 @@ jobs:
         with:
           name: MediScribe-AppX-${{ matrix.arch }}
           path: dist-electron/*.appx
-          compression-level: 0
+          compression-level: 6
           retention-days: 1
 
       - name: Publish to Microsoft Store
