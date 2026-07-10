@@ -27,7 +27,7 @@
     "bundle-ffmpeg": "node scripts/bundle-ffmpeg.js",
     "bundle-whisper": "node scripts/bundle-whisper.js",
     "generate-icons": "node scripts/generate-icons.js",
-    "prebuild": "npm run generate-icons && npm run bundle-models && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper",
+    "prebuild": "npm run generate-icons && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx --cache --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",
     "lint:fix": "eslint . --ext .ts,.tsx --cache --fix --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",

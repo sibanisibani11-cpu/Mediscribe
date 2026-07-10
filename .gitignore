@@ -25,7 +25,8 @@
 !/build/
 /dist-electron/
 /resources/bin/
-/resources/models/
+/resources/models/*.bin
+!/resources/models/.gitkeep
 /.cache/
 /public/.cache/
 /out/.cache/
