@@ -68,6 +68,7 @@ jobs:
             dist-electron/*.appx
             dist-electron/*.appxupload
           if-no-files-found: error
+          compression-level: 0
           retention-days: 1
 
       - name: Upload Windows installer artifacts
@@ -80,6 +81,7 @@ jobs:
             dist-electron/*.exe.blockmap
             dist-electron/latest.yml
           if-no-files-found: error
+          compression-level: 0
           retention-days: 1
 
       - name: Publish to Microsoft Store

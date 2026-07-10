@@ -96,22 +96,76 @@ jobs:
             npx electron-builder --${{ matrix.platform }} --publish=never
           fi
 
-      - name: Upload installers as artifacts
+      - name: Upload Windows EXE Installers
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'win'
+        continue-on-error: true
+        with:
+          name: MediScribe-Windows-EXE
+          path: dist-electron/*.exe
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Windows MSI Installer
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'win'
+        continue-on-error: true
+        with:
+          name: MediScribe-Windows-MSI
+          path: dist-electron/*.msi
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload macOS DMG Installer
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'mac'
+        continue-on-error: true
+        with:
+          name: MediScribe-macOS-DMG
+          path: dist-electron/*.dmg
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload macOS ZIP Artifact
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'mac'
+        continue-on-error: true
+        with:
+          name: MediScribe-macOS-ZIP
+          path: dist-electron/*.zip
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Linux AppImage Installer
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'linux'
+        continue-on-error: true
+        with:
+          name: MediScribe-Linux-AppImage
+          path: dist-electron/*.AppImage
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Linux DEB Installer
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'linux'
+        continue-on-error: true
+        with:
+          name: MediScribe-Linux-DEB
+          path: dist-electron/*.deb
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload Update Metadata
         uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
-          name: MediScribe-${{ matrix.platform }}-installers
-          retention-days: 7
-          if-no-files-found: warn
+          name: MediScribe-${{ matrix.platform }}-update-metadata
           path: |
-            dist-electron/*.exe
-            dist-electron/*.msi
-            dist-electron/*.dmg
-            dist-electron/*.pkg
-            dist-electron/*.zip
-            dist-electron/*.AppImage
-            dist-electron/*.deb
-            dist-electron/*.appx
-            dist-electron/*.msix
-            dist-electron/*.blockmap
             dist-electron/latest*.yml
+            dist-electron/*.blockmap
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
+
