@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
-import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles } from "lucide-react";
+import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
