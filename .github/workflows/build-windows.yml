@@ -11,6 +11,8 @@ jobs:
   build-windows:
     name: Build AppX (${{ matrix.arch }})
     runs-on: windows-latest
+    env:
+      HAS_STORE_CREDS: ${{ secrets.PC_CLIENT_ID != '' && secrets.PC_CLIENT_SECRET != '' && secrets.PC_TENANT_ID != '' && secrets.PC_STORE_ID != '' }}
     strategy:
       matrix:
         arch: [x64, arm64]
@@ -62,7 +64,7 @@ jobs:
           retention-days: 1
 
       - name: Publish to Microsoft Store
-        if: ${{ secrets.PC_CLIENT_ID && secrets.PC_CLIENT_SECRET && secrets.PC_TENANT_ID && secrets.PC_STORE_ID }}
+        if: env.HAS_STORE_CREDS == 'true'
         shell: bash
         env:
           PC_TENANT_ID: ${{ secrets.PC_TENANT_ID }}
