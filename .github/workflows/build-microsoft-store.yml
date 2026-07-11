@@ -49,6 +49,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_PLATFORM: win32
 
+      - name: Bundle models and binaries
+        run: npm run prebuild
+        env:
+          TARGET_PLATFORM: win32
+          SKIP_ICON_GENERATION: 'true'
+
       - name: Build AppX packages (x64 + arm64)
         run: npx electron-builder --win appx --x64 --arm64 --publish=never
         env:

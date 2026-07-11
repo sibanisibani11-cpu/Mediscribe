@@ -51,6 +51,12 @@ jobs:
       - name: Build web app (Next.js)
         run: npm run build
 
+      - name: Bundle models and binaries
+        run: npm run prebuild
+        env:
+          TARGET_PLATFORM: win32
+          SKIP_ICON_GENERATION: 'true'
+
       - name: Package Electron app (AppX)
         run: npx electron-builder --win appx --${{ matrix.arch }} --publish=never
 
