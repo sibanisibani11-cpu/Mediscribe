@@ -96,71 +96,8 @@ jobs:
             npx electron-builder --${{ matrix.platform }} --publish=never
           fi
 
-      - name: Upload Windows EXE Installers
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'win'
-        continue-on-error: true
-        with:
-          name: MediScribe-Windows-EXE
-          path: dist-electron/*.exe
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
-
-      - name: Upload Windows MSI Installer
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'win'
-        continue-on-error: true
-        with:
-          name: MediScribe-Windows-MSI
-          path: dist-electron/*.msi
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
-
-      - name: Upload macOS DMG Installer
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'mac'
-        continue-on-error: true
-        with:
-          name: MediScribe-macOS-DMG
-          path: dist-electron/*.dmg
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
-
-      - name: Upload macOS ZIP Artifact
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'mac'
-        continue-on-error: true
-        with:
-          name: MediScribe-macOS-ZIP
-          path: dist-electron/*.zip
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
-
-      - name: Upload Linux AppImage Installer
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'linux'
-        continue-on-error: true
-        with:
-          name: MediScribe-Linux-AppImage
-          path: dist-electron/*.AppImage
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
-
-      - name: Upload Linux DEB Installer
-        uses: actions/upload-artifact@v4
-        if: always() && matrix.platform == 'linux'
-        continue-on-error: true
-        with:
-          name: MediScribe-Linux-DEB
-          path: dist-electron/*.deb
-          if-no-files-found: ignore
-          compression-level: 6
-          retention-days: 7
+      - name: Avoid storing large installer artifacts in GitHub Actions
+        run: echo "Build complete. Installer artifacts are published to GitHub Releases for tag builds and not retained as workflow artifacts."
 
       - name: Upload Update Metadata
         uses: actions/upload-artifact@v4
