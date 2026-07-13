@@ -45,7 +45,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Write runtime secrets to .env so the packaged app can read them
+      - name: Generate platform icons
+        run: node scripts/generate-icons.js
+
+      - name: Build web app (Next.js)
+        run: npm run build
+        env:
+          SKIP_ICON_GENERATION: 'true'
+
+      - name: Rebuild native modules
+        run: npx electron-builder install-app-deps
+
+      - name: Bundle models and binaries
+        run: npm run prebuild
+        env:
+          TARGET_PLATFORM: ${{ matrix.target_platform }}
+          SKIP_ICON_GENERATION: 'true'
+
+      # Write .env AFTER next build so it is never overwritten by the prebuild lifecycle
       - name: Write .env file
         shell: bash
         run: |
@@ -62,21 +79,7 @@ jobs:
             "NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
             > .env
           echo ".env written successfully."
-
-      - name: Generate platform icons
-        run: node scripts/generate-icons.js
-
-      - name: Build web app (Next.js)
-        run: npm run build
-
-      - name: Rebuild native modules
-        run: npx electron-builder install-app-deps
-
-      - name: Bundle models and binaries
-        run: npm run prebuild
-        env:
-          TARGET_PLATFORM: ${{ matrix.target_platform }}
-          SKIP_ICON_GENERATION: 'true'
+          cat .env
 
       - name: Build Electron installers
         shell: bash

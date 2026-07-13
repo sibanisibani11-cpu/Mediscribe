@@ -24,8 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Write runtime secrets to .env so the packaged app can read them at runtime.
-      # Without this step the packaged AppX has no OAuth credentials and Google login fails.
+      - name: Build application and bundle resources
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_PLATFORM: win32
+          SKIP_ICON_GENERATION: 'true'
+
+      - name: Bundle models and binaries
+        run: npm run prebuild
+        env:
+          TARGET_PLATFORM: win32
+          SKIP_ICON_GENERATION: 'true'
+
+      # Write .env AFTER next build so it is never overwritten by the prebuild lifecycle
       - name: Write .env file
         shell: bash
         run: |
@@ -42,18 +54,7 @@ jobs:
             "NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
             > .env
           echo ".env written successfully."
-
-      - name: Build application and bundle resources
-        run: npm run build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_PLATFORM: win32
-
-      - name: Bundle models and binaries
-        run: npm run prebuild
-        env:
-          TARGET_PLATFORM: win32
-          SKIP_ICON_GENERATION: 'true'
+          cat .env
 
       - name: Build AppX packages (x64 + arm64)
         run: npx electron-builder --win appx --x64 --arm64 --publish=never
