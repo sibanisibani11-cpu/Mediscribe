@@ -15,7 +15,7 @@ import {
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
 interface AuthPageProps {
-    onLogin: (user: string) => void;
+    onLogin: (user: string, uid?: string) => void;
 }
 
 export function AuthPage({ onLogin }: AuthPageProps) {
@@ -42,12 +42,14 @@ export function AuthPage({ onLogin }: AuthPageProps) {
 
         try {
             if (isFirebaseConfigured && auth && db) {
+                let uid = "";
                 if (isLogin) {
                     // Sign In
-                    await signInWithEmailAndPassword(auth, email, password);
+                    const credential = await signInWithEmailAndPassword(auth, email, password);
+                    uid = credential.user.uid;
 
-                    // Fetch user document from Firestore to ensure it exists
-                    const userDocRef = doc(db, "users", email);
+                    // Fetch user document from Firestore using UID to ensure it exists
+                    const userDocRef = doc(db, "users", uid);
                     const docSnap = await getDoc(userDocRef);
                     if (!docSnap.exists()) {
                         await setDoc(userDocRef, {
@@ -63,10 +65,11 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                     });
                 } else {
                     // Sign Up
-                    await createUserWithEmailAndPassword(auth, email, password);
+                    const credential = await createUserWithEmailAndPassword(auth, email, password);
+                    uid = credential.user.uid;
 
-                    // Create user document in Firestore with isActivated: false by default
-                    const userDocRef = doc(db, "users", email);
+                    // Create user document in Firestore with isActivated: false by default using UID
+                    const userDocRef = doc(db, "users", uid);
                     await setDoc(userDocRef, {
                         email: email,
                         isActivated: false,
@@ -78,7 +81,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                         description: "Your account has been created successfully.",
                     });
                 }
-                onLogin(email);
+                onLogin(email, uid);
             } else {
                 // Fallback / Simulated mode: Look up in local accounts database via IPC
                 await new Promise(resolve => setTimeout(resolve, 800));
@@ -90,7 +93,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                             title: "Welcome back! (Simulated)",
                             description: "You have successfully logged in.",
                         });
-                        onLogin(email);
+                        onLogin(email, email);
                     } else {
                         throw new Error(check?.error || "Invalid email or password.");
                     }
@@ -101,7 +104,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                             title: "Account Created (Simulated)",
                             description: "Your local account has been registered successfully. You can now sign in.",
                         });
-                        onLogin(email);
+                        onLogin(email, email);
                     } else {
                         throw new Error(result?.error || "Failed to register local user.");
                     }
@@ -136,15 +139,17 @@ export function AuthPage({ onLogin }: AuthPageProps) {
             if (provider === "Google" && (window as any).electron?.googleLogin) {
                 const result = await (window as any).electron.googleLogin();
                 if (result.success) {
+                    let uid = "";
                     if (isFirebaseConfigured && auth && db) {
                         try {
                             if (result.idToken) {
                                 const credential = GoogleAuthProvider.credential(result.idToken);
-                                await signInWithCredential(auth, credential);
+                                const userCredential = await signInWithCredential(auth, credential);
+                                uid = userCredential.user.uid;
                             }
 
-                            // Ensure firestore user document exists
-                            const userDocRef = doc(db, "users", result.user);
+                            // Ensure firestore user document exists using UID
+                            const userDocRef = doc(db, "users", uid || result.user);
                             const userDoc = await getDoc(userDocRef);
                             if (!userDoc.exists()) {
                                 await setDoc(userDocRef, {
@@ -162,7 +167,7 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                         title: `Connected with ${provider}`,
                         description: "Successfully authenticated via secure redirect.",
                     });
-                    onLogin(result.user || `${provider} User`);
+                    onLogin(result.user || `${provider} User`, uid || result.user);
                 } else {
                     throw new Error(result.error || "Login cancelled or failed.");
                 }

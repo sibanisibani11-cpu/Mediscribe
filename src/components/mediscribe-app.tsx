@@ -13,7 +13,7 @@ import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
 import { db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -29,6 +29,7 @@ export function MediScribeApp() {
   const [showSplash, setShowSplash] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
   const [licenseDetails, setLicenseDetails] = useState<any>(null);
@@ -47,8 +48,9 @@ export function MediScribeApp() {
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
-  const isLifetimeFree = process.env.NEXT_PUBLIC_PERSONAL_LIFETIME_FREE === 'true' && 
-    (currentUser === 'jeetumdc@gmail.com' || (currentUser && (currentUser.toLowerCase().includes('test') || currentUser.toLowerCase().includes('reviewer'))));
+  // Whitelisted accounts that bypass subscription (admin + MS Store reviewer accounts only)
+  const WHITELISTED_EMAILS = ['jeetumdc@gmail.com', 'test@mediapp.store', 'reviewer@mediapp.store'];
+  const isLifetimeFree = currentUser !== null && WHITELISTED_EMAILS.includes(currentUser.toLowerCase().trim());
 
   useEffect(() => {
     if (isElectron) {
@@ -170,15 +172,36 @@ export function MediScribeApp() {
 
     if (isFirebaseConfigured && db && currentUser) {
       try {
-        unsubscribeFirestore = onSnapshot(doc(db, "users", currentUser), (docSnap: any) => {
-          const userData = docSnap.exists() ? docSnap.data() : null;
-          const active = !!(userData && userData.isActivated);
-          setIsActivated(active);
+        const userDocKey = currentUserUid || currentUser;
+        
+        unsubscribeFirestore = onSnapshot(doc(db, "users", userDocKey), (docSnap: any) => {
+          let userData = docSnap.exists() ? docSnap.data() : null;
           
-          if (userData && userData.licenseDetails) {
-            setLicenseDetails(userData.licenseDetails);
+          const handleUserData = (data: any) => {
+            const active = !!(data && data.isActivated);
+            setIsActivated(active);
+            
+            if (data && data.licenseDetails) {
+              setLicenseDetails(data.licenseDetails);
+            } else {
+              setLicenseDetails(null);
+            }
+          };
+
+          if (!userData && currentUserUid && currentUserUid !== currentUser) {
+            // Check legacy email document ID
+            const emailDocRef = doc(db, "users", currentUser);
+            getDoc(emailDocRef).then((emailSnap) => {
+              if (emailSnap.exists()) {
+                handleUserData(emailSnap.data());
+              } else {
+                handleUserData(null);
+              }
+            }).catch(() => {
+              handleUserData(null);
+            });
           } else {
-            setLicenseDetails(null);
+            handleUserData(userData);
           }
         }, (error: any) => {
           console.error("Firestore sync error:", error);
@@ -201,7 +224,7 @@ export function MediScribeApp() {
           }
         }).catch(() => {});
       } else {
-        setIsActivated(true); // Default to true if not in Electron (for web dev)
+        setIsActivated(false); // Non-Electron (web) users must subscribe
       }
     }
 
@@ -210,7 +233,7 @@ export function MediScribeApp() {
         unsubscribeFirestore();
       }
     };
-  }, [isMounted, isElectron, currentUser, isLifetimeFree]);
+  }, [isMounted, isElectron, currentUser, currentUserUid, isLifetimeFree]);
 
   const handleLogout = async () => {
     // Always call googleLogout via Electron — this removes the device from
@@ -265,9 +288,10 @@ export function MediScribeApp() {
 
   // Show Auth Page if not authenticated
   if (!isAuthenticated) {
-    return <AuthPage onLogin={(user) => {
+    return <AuthPage onLogin={(user, uid) => {
       setIsAuthenticated(true);
       setCurrentUser(user);
+      setCurrentUserUid(uid || user);
     }} />;
   }
 

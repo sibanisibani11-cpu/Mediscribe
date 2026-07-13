@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import { cn, openExternalUrl } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
-import { db, isFirebaseConfigured } from "../lib/firebase";
+import { auth, db, isFirebaseConfigured } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 
 interface PricingViewProps {
@@ -296,11 +296,14 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
                                     date: new Date().toISOString(),
                                     hwid: activationId,
                                 };
-                                const userDocRef = doc(db, "users", currentUser);
-                                await setDoc(userDocRef, {
-                                    isActivated: true,
-                                    licenseDetails: licenseDetails
-                                }, { merge: true });
+                                const userKey = (auth && auth.currentUser) ? auth.currentUser.uid : currentUser;
+                                if (userKey) {
+                                    const userDocRef = doc(db, "users", userKey);
+                                    await setDoc(userDocRef, {
+                                        isActivated: true,
+                                        licenseDetails: licenseDetails
+                                    }, { merge: true });
+                                }
                             } catch (firestoreErr) {
                                 console.error("Failed to write subscription info to Firestore:", firestoreErr);
                             }

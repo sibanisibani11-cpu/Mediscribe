@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.1.4",
+  "version": "1.1.6",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -141,7 +141,11 @@
       },
       {
         "from": "resources/bin",
-        "to": "bin"
+        "to": "bin",
+        "filter": [
+          "*.exe",
+          "*.dll"
+        ]
       },
       {
         "from": ".env",
@@ -149,6 +153,20 @@
       }
     ],
     "mac": {
+      "extraResources": [
+        {
+          "from": "resources/models",
+          "to": "models"
+        },
+        {
+          "from": "resources/bin",
+          "to": "bin"
+        },
+        {
+          "from": ".env",
+          "to": ".env"
+        }
+      ],
       "category": "public.app-category.medical",
       "target": [
         {
@@ -197,7 +215,38 @@
       "icon": "build/icon.ico",
       "publisherName": "MediScribe",
       "verifyUpdateCodeSignature": false,
-      "requestedExecutionLevel": "asInvoker"
+      "requestedExecutionLevel": "asInvoker",
+      "extraResources": [
+        {
+          "from": "resources/models",
+          "to": "models"
+        },
+        {
+          "from": "resources/bin",
+          "to": "bin",
+          "filter": [
+            "*.exe",
+            "*.dll"
+          ]
+        },
+        {
+          "from": ".env",
+          "to": ".env"
+        }
+      ],
+      "extraFiles": [
+        {
+          "from": "public",
+          "to": "public",
+          "filter": [
+            "**/*"
+          ]
+        },
+        {
+          "from": "build/vc_redist.x64.exe",
+          "to": "vc_redist.x64.exe"
+        }
+      ]
     },
     "appx": {
       "identityName": "mediapp.MediScribe",

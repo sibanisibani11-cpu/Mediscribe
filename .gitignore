@@ -25,7 +25,7 @@
 !/build/
 /dist-electron/
 /resources/bin/
-/resources/models/*.bin
+/resources/models/
 !/resources/models/.gitkeep
 /.cache/
 /public/.cache/
@@ -68,3 +68,6 @@ firestore-debug.log
 # eslint cache
 .eslintcache
 
+# Developer bypass lock files - NEVER commit these
+developer-subscription-bypass.lock
+electron/lifetime.lock

@@ -300,21 +300,15 @@ function isDeveloperSubscriptionBypassEnabled() {
     const normalizedEmail = email.toLowerCase().trim();
     if (
         normalizedEmail === 'jeetumdc@gmail.com' ||
-        normalizedEmail.includes('test') ||
-        normalizedEmail.includes('reviewer')
+        normalizedEmail === 'test@mediapp.store' ||
+        normalizedEmail === 'reviewer@mediapp.store'
     ) {
         return true;
     }
 
+    // Only allow env-var bypass (for CI/build scripts), NOT file-based bypass
     if (process.env.DEV_SUBSCRIPTION_BYPASS === 'true') return true;
-    try {
-        const bypassFile = getDeveloperSubscriptionBypassPath();
-        if (fs.existsSync(bypassFile)) return true;
-        const repoBypassFile = path.join(__dirname, '..', 'developer-subscription-bypass.lock');
-        return fs.existsSync(repoBypassFile);
-    } catch (error) {
-        return false;
-    }
+    return false;
 }
 
 function getMachineId() {
@@ -358,10 +352,10 @@ async function checkDeviceLimit(email) {
         const normalizedEmail = email.toLowerCase().trim();
         if (
             normalizedEmail === 'jeetumdc@gmail.com' ||
-            normalizedEmail.includes('test') ||
-            normalizedEmail.includes('reviewer')
+            normalizedEmail === 'test@mediapp.store' ||
+            normalizedEmail === 'reviewer@mediapp.store'
         ) {
-            console.log(`[MediScribe] Bypassing device limit check for developer/tester/reviewer email: ${email}`);
+            console.log(`[MediScribe] Bypassing device limit check for admin/reviewer email: ${email}`);
             return { success: true };
         }
     }
@@ -431,10 +425,10 @@ async function checkRegistryBackground(email) {
     const normalizedEmail = email.toLowerCase().trim();
     if (
         normalizedEmail === 'jeetumdc@gmail.com' ||
-        normalizedEmail.includes('test') ||
-        normalizedEmail.includes('reviewer')
+        normalizedEmail === 'test@mediapp.store' ||
+        normalizedEmail === 'reviewer@mediapp.store'
     ) {
-        return; // skip for developers
+        return; // skip for admin/reviewer accounts
     }
 
     try {
@@ -512,14 +506,68 @@ function getExpirationDate(data) {
     return startDate;
 }
 
+async function verifyLicensePaymentOnline(paymentId) {
+    const razorpayKeyId = process.env.RAZORPAY_KEY_ID || '';
+    const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
+    if (!razorpayKeyId || !razorpayKeySecret || razorpayKeySecret.includes('PASTE_YOUR') || !paymentId) {
+        return true; // Skip online verification if keys aren't set
+    }
+
+    try {
+        const https = require('https');
+        const credentials = Buffer.from(`${razorpayKeyId}:${razorpayKeySecret}`).toString('base64');
+        const paymentObj = await new Promise((resolve) => {
+            const req = https.get(
+                `https://api.razorpay.com/v1/payments/${paymentId}`,
+                {
+                    headers: {
+                        Authorization: `Basic ${credentials}`,
+                    },
+                },
+                (res) => {
+                    let data = '';
+                    res.on('data', (chunk) => { data += chunk; });
+                    res.on('end', () => {
+                        try {
+                            resolve(JSON.parse(data));
+                        } catch (e) {
+                            resolve(null);
+                        }
+                    });
+                }
+            );
+            req.on('error', () => resolve(null));
+            req.setTimeout(5000, () => {
+                req.destroy();
+                resolve(null);
+            });
+        });
+
+        if (paymentObj) {
+            if (paymentObj.error) {
+                console.warn(`[Licensing] Revoking license: Razorpay payment ${paymentId} not found.`);
+                return false;
+            }
+            if (paymentObj.status !== 'captured' && paymentObj.status !== 'authorized') {
+                console.warn(`[Licensing] Revoking license: Razorpay payment ${paymentId} status is ${paymentObj.status}.`);
+                return false;
+            }
+            return true;
+        }
+    } catch (e) {
+        console.error('[Licensing] Error in online verification:', e);
+    }
+    return true; // Safe fallback in case of connection issues
+}
+
 function checkActivationStatus() {
     const email = getCurrentUserEmail();
     if (email) {
         const normalizedEmail = email.toLowerCase().trim();
         if (
             normalizedEmail === 'jeetumdc@gmail.com' ||
-            normalizedEmail.includes('test') ||
-            normalizedEmail.includes('reviewer')
+            normalizedEmail === 'test@mediapp.store' ||
+            normalizedEmail === 'reviewer@mediapp.store'
         ) {
             return true;
         }
@@ -539,6 +587,43 @@ function checkActivationStatus() {
         if (data.hwid === currentHwid && data.code === expectedCode) {
             const exp = getExpirationDate(data);
             if (new Date() > exp) return false; // Expired
+
+            // Verify the payment ID online in the background
+            if (data.payment_id) {
+                verifyLicensePaymentOnline(data.payment_id).then((isValid) => {
+                    if (!isValid) {
+                        try {
+                            if (fs.existsSync(licensePath)) {
+                                fs.unlinkSync(licensePath);
+                                console.log('[Licensing] Revoked invalid or unpaid license file.');
+                                if (mainWindow && !mainWindow.isDestroyed()) {
+                                    mainWindow.reload();
+                                }
+                            }
+                        } catch (err) {
+                            console.error('[Licensing] Failed to delete revoked license file:', err);
+                        }
+                    }
+                }).catch(() => {});
+            } else {
+                // If there is no payment_id and we are not in development or bypass mode, revoke the license
+                const isDev = process.env.NODE_ENV === 'development' || process.env.DEV_SUBSCRIPTION_BYPASS === 'true';
+                if (!isDev) {
+                    try {
+                        if (fs.existsSync(licensePath)) {
+                            fs.unlinkSync(licensePath);
+                            console.log('[Licensing] Revoked legacy license file with missing payment ID.');
+                            if (mainWindow && !mainWindow.isDestroyed()) {
+                                mainWindow.reload();
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[Licensing] Failed to delete legacy license file:', err);
+                    }
+                    return false;
+                }
+            }
+
             return true;
         }
         return false;
@@ -2616,6 +2701,49 @@ function getFFmpegPath() {
 let whisperServerStatus = 'stopped'; // 'stopped', 'starting', 'ready', 'error'
 let whisperServerRestartCount = 0;
 const MAX_WHISPER_RESTARTS = 3;
+let whisperServerPort = 8080; // Will be set dynamically
+
+// Find a free port starting from the preferred port
+function findFreePort(startPort = 8080) {
+    return new Promise((resolve, reject) => {
+        const net = require('net');
+        const server = net.createServer();
+        server.listen(startPort, '127.0.0.1', () => {
+            const port = server.address().port;
+            server.close(() => resolve(port));
+        });
+        server.on('error', () => {
+            // Port in use, try next one
+            findFreePort(startPort + 1).then(resolve).catch(reject);
+        });
+    });
+}
+
+// Silently install VC++ redistributable if bundled (Windows only)
+function tryInstallVCRedist() {
+    if (process.platform !== 'win32') return Promise.resolve();
+    return new Promise((resolve) => {
+        // Look for bundled vc_redist in the app install directory
+        const redist = path.join(path.dirname(app.getPath('exe')), 'vc_redist.x64.exe');
+        if (!fs.existsSync(redist)) {
+            console.log('[MediScribe] VC++ redist not found alongside exe, skipping.');
+            return resolve();
+        }
+        console.log('[MediScribe] Installing VC++ 2015-2022 Redistributable silently...');
+        const { spawn: spawnRedist } = require('child_process');
+        const proc = spawnRedist(redist, ['/install', '/quiet', '/norestart'], { detached: true, stdio: 'ignore' });
+        proc.on('close', (code) => {
+            console.log(`[MediScribe] VC++ Redist installer exited with code: ${code}`);
+            resolve();
+        });
+        proc.on('error', (err) => {
+            console.warn('[MediScribe] Could not run VC++ Redist installer:', err.message);
+            resolve();
+        });
+        // Don't wait more than 60 seconds
+        setTimeout(resolve, 60000);
+    });
+}
 
 function setWhisperServerStatus(status) {
     whisperServerStatus = status;
@@ -2668,7 +2796,14 @@ function startWhisperServer() {
             const fallbackPath = getModelPath('base.en');
             if (fs.existsSync(fallbackPath)) {
                 console.log('[MediScribe] Falling back to base.en model');
-                startServerWithModel(serverPath, fallbackPath);
+                findFreePort(8080).then(port => {
+                    whisperServerPort = port;
+                    console.log(`[MediScribe] Using port ${port} for Whisper server`);
+                    startServerWithModel(serverPath, fallbackPath);
+                }).catch(() => {
+                    whisperServerPort = 8080;
+                    startServerWithModel(serverPath, fallbackPath);
+                });
                 return;
             }
         }
@@ -2681,10 +2816,19 @@ function startWhisperServer() {
         whisperServerRestartCount = 0;
     }
 
-    startServerWithModel(serverPath, modelPath);
+    // Find a free port dynamically to avoid conflicts with other apps
+    findFreePort(8080).then(port => {
+        whisperServerPort = port;
+        console.log(`[MediScribe] Using port ${port} for Whisper server`);
+        startServerWithModel(serverPath, modelPath);
+    }).catch(() => {
+        whisperServerPort = 8080; // fallback
+        startServerWithModel(serverPath, modelPath);
+    });
 }
 
 let healthCheckInterval = null;
+
 
 function stopHealthCheck() {
     if (healthCheckInterval) {
@@ -2698,7 +2842,7 @@ function startHealthCheck(serverPath, modelPath) {
     healthCheckInterval = setInterval(() => {
         if (whisperServerStatus === 'ready' && whisperServerProcess) {
             const http = require('http');
-            const req = http.get('http://127.0.0.1:8080/', (res) => {
+            const req = http.get(`http://127.0.0.1:${whisperServerPort}/`, (res) => {
                 // Keep it ready
             }).on('error', (err) => {
                 console.warn('[Whisper Server] Background health check failed:', err.message);
@@ -2734,12 +2878,15 @@ function startServerWithModel(serverPath, modelPath) {
     const cwd = path.dirname(serverPath);
 
     try {
-        whisperServerProcess = spawn(serverPath, ['-m', modelPath, '--port', '8080'], {
+        whisperServerProcess = spawn(serverPath, ['-m', modelPath, '--port', String(whisperServerPort)], {
             cwd,
-            stdio: ['ignore', 'pipe', 'pipe']
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true
         });
 
-        let serverReady = false;
+        // On Windows, an immediate close (before any output) usually means a missing DLL
+        let outputReceived = false;
+        let vcRedistAttempted = false;
 
         whisperServerProcess.stdout.on('data', (data) => {
             const output = data.toString();
@@ -2774,11 +2921,23 @@ function startServerWithModel(serverPath, modelPath) {
             }
         });
 
-        whisperServerProcess.on('error', (err) => {
-              console.error('[Whisper Server] Failed to start:', err);
-              try { fs.appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] [Whisper Server] Failed to start: ${err && err.stack ? err.stack : String(err)}\n`); } catch (e) { }
-            setWhisperServerStatus('error');
-            whisperServerProcess = null;
+        whisperServerProcess.on('error', async (err) => {
+              console.error('[Whisper Server] Failed to start process:', err.message);
+              try { fs.appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] [Whisper Server] Spawn error: ${err.stack || String(err)}\n`); } catch (e) { }
+            
+            // On Windows, ENOENT or spawn errors often mean missing VC++ runtime
+            if (process.platform === 'win32' && !vcRedistAttempted) {
+                vcRedistAttempted = true;
+                console.log('[MediScribe] Spawn failed on Windows - attempting VC++ redist install and retry...');
+                whisperServerProcess = null;
+                await tryInstallVCRedist();
+                await new Promise(r => setTimeout(r, 3000));
+                // Retry once after redist install
+                startServerWithModel(serverPath, modelPath);
+            } else {
+                setWhisperServerStatus('error');
+                whisperServerProcess = null;
+            }
         });
 
         whisperServerProcess.on('close', (code) => {
@@ -2817,7 +2976,7 @@ function startServerWithModel(serverPath, modelPath) {
             if (!whisperServerProcess) return;
 
             const http = require('http');
-            const req = http.get('http://127.0.0.1:8080/', (res) => {
+            const req = http.get(`http://127.0.0.1:${whisperServerPort}/`, (res) => {
                 console.log('[Whisper Server] Health check passed - server is responding');
                 setWhisperServerStatus('ready');
                 whisperServerRestartCount = 0;
@@ -3274,6 +3433,7 @@ app.whenReady().then(() => {
         const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET || '';
 
         let paymentObj = null;
+        let isVerified = false;
 
         // Verify/Fetch payment with Razorpay API (if secret key is configured)
         if (razorpayKeyId && razorpayKeySecret && !razorpayKeySecret.includes('PASTE_YOUR')) {
@@ -3371,14 +3531,29 @@ app.whenReady().then(() => {
                         };
                     }
 
+                    isVerified = true;
+
                     // Extract plan details from notes / payment object if not passed
                     if (!plan_id && paymentObj.notes?.plan_id) plan_id = paymentObj.notes.plan_id;
                     if (!billing && paymentObj.notes?.billing) billing = paymentObj.notes.billing;
                     if (!currency) currency = paymentObj.currency;
                     if (!amount) amount = paymentObj.amount / 100;
+                } else {
+                    return { success: false, error: 'Failed to retrieve payment information from Razorpay.' };
                 }
             } catch (err) {
                 console.error('[Licensing] Error verifying payment:', err);
+                return { success: false, error: 'Payment verification failed: ' + err.message };
+            }
+
+            if (!isVerified) {
+                return { success: false, error: 'Payment verification check failed.' };
+            }
+        } else {
+            // Razorpay credentials are not set (e.g. locally in dev). Bypass only in development mode.
+            const isDev = process.env.NODE_ENV === 'development' || process.env.DEV_SUBSCRIPTION_BYPASS === 'true';
+            if (!isDev) {
+                return { success: false, error: 'Payment gateway configuration is missing.' };
             }
         }
 
@@ -5206,8 +5381,8 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
 
         // Use whisper-server HTTP API for fast transcription
         try {
-            // Use port 8080 for C++ server
-            const port = 8080;
+            // Use dynamic port for C++ server (set at startup)
+            const port = whisperServerPort;
             const endpoint = '/inference'; // whisper.cpp server endpoint
             console.log(`[MediScribe] Starting transcription via ${mode} mode (port ${port})...`);
 

@@ -43,6 +43,8 @@ const oauth2Client = new Proxy({}, {
 });
 
 const SCOPES = [
+  'openid',
+  'profile',
   'https://www.googleapis.com/auth/drive.appdata',
   'https://www.googleapis.com/auth/userinfo.email'
 ];
