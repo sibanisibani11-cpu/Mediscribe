@@ -25,12 +25,12 @@ try {
 // We therefore try several locations and stop at the first one that exists.
 (function loadDotEnv() {
     const candidates = [
+        // Packaged: resources/.env (electron-builder extraResources — plain file, always readable)
+        path.join(process.resourcesPath || '', '.env'),
+        // Packaged: resources/app.asar.unpacked/.env (if extraFiles used)
+        path.join(process.resourcesPath || '', 'app.asar.unpacked', '.env'),
         // Dev / unpacked: <project-root>/.env  (relative to electron/main.js → one level up)
         path.join(__dirname, '../.env'),
-        // Packaged (NSIS/portable): resources/.env  (electron-builder copies files there)
-        path.join(process.resourcesPath || '', '.env'),
-        // Packaged (NSIS/portable): resources/app.asar.unpacked path (if extraFiles used)
-        path.join(process.resourcesPath || '', 'app.asar.unpacked', '.env'),
         // Same directory as main.js (fallback)
         path.join(__dirname, '.env'),
     ];
@@ -39,7 +39,17 @@ try {
     for (const envPath of candidates) {
         try {
             if (fs.existsSync(envPath)) {
-                require('dotenv').config({ path: envPath });
+                const result = require('dotenv').config({ path: envPath });
+                // dotenv does NOT throw on read failure — it returns { error }.
+                if (result.error) {
+                    console.warn('[MediScribe] Could not read .env at', envPath, '-', result.error.message);
+                    continue;
+                }
+                // Verify the file actually contained usable credentials before accepting it
+                if (!process.env.GOOGLE_CLIENT_ID && !process.env.RAZORPAY_KEY_ID) {
+                    console.warn('[MediScribe] .env at', envPath, 'parsed but contained no known keys, trying next path');
+                    continue;
+                }
                 console.log('[MediScribe] Loaded .env from:', envPath);
                 loaded = true;
                 break;
