@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -134,24 +134,6 @@
         ]
       }
     ],
-    "extraResources": [
-      {
-        "from": "resources/models",
-        "to": "models"
-      },
-      {
-        "from": "resources/bin",
-        "to": "bin",
-        "filter": [
-          "*.exe",
-          "*.dll"
-        ]
-      },
-      {
-        "from": ".env",
-        "to": ".env"
-      }
-    ],
     "mac": {
       "extraResources": [
         {
@@ -271,7 +253,21 @@
           ]
         }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "extraResources": [
+        {
+          "from": "resources/models",
+          "to": "models"
+        },
+        {
+          "from": "resources/bin",
+          "to": "bin"
+        },
+        {
+          "from": ".env",
+          "to": ".env"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
