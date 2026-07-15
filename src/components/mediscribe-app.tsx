@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
@@ -13,7 +13,7 @@ import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
 import { db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -45,6 +45,8 @@ export function MediScribeApp() {
   }>({ status: 'idle' });
 
   const { toast } = useToast();
+  // Guard so the local-license → Firestore migration only runs once per session
+  const licenseMigrationAttempted = useRef(false);
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
@@ -180,11 +182,48 @@ export function MediScribeApp() {
           const handleUserData = (data: any) => {
             const active = !!(data && data.isActivated);
             setIsActivated(active);
-            
+
             if (data && data.licenseDetails) {
               setLicenseDetails(data.licenseDetails);
             } else {
               setLicenseDetails(null);
+            }
+
+            // One-time migration: users who paid while the app ran in local-license
+            // mode have a valid paid license on this machine but no Firestore record.
+            // Push it to their Firestore doc so they keep Pro after the switch to
+            // per-user (Firestore) licensing.
+            if (!active && isElectron && !licenseMigrationAttempted.current) {
+              licenseMigrationAttempted.current = true;
+              (window.electron as any).getLicenseDetails?.().then(async (local: any) => {
+                try {
+                  // Only migrate real purchases: must have a payment_id and not be expired
+                  if (
+                    local &&
+                    local.payment_id &&
+                    local.expiresAt &&
+                    new Date(local.expiresAt) > new Date() &&
+                    local.billing !== 'developer'
+                  ) {
+                    const userDocRef = doc(db, "users", userDocKey);
+                    await setDoc(userDocRef, {
+                      isActivated: true,
+                      licenseDetails: {
+                        billing: local.billing || 'monthly',
+                        expiresAt: local.expiresAt,
+                        date: local.date || new Date().toISOString(),
+                        hwid: local.hwid || '',
+                        payment_id: local.payment_id,
+                        migratedFromLocalLicense: true,
+                      },
+                    }, { merge: true });
+                    console.log('[MediScribe] Migrated local paid license to Firestore.');
+                    // onSnapshot will fire again and flip isActivated to true
+                  }
+                } catch (migrationErr) {
+                  console.error('[MediScribe] Local license migration failed:', migrationErr);
+                }
+              }).catch(() => {});
             }
           };
 

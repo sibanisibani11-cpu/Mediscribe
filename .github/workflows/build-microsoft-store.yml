@@ -24,12 +24,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # NEXT_PUBLIC_* vars are inlined at build time by Next.js — they MUST be present
+      # here as env vars. Writing them to .env later does NOT affect the frontend bundle.
       - name: Build application and bundle resources
-        run: npm run build
+        shell: bash
+        run: |
+          if [[ -z "$NEXT_PUBLIC_FIREBASE_API_KEY" ]]; then
+            echo "::error::NEXT_PUBLIC_FIREBASE_* repo secrets are not set. Without them the app ships in 'simulated mode' with per-machine (not per-user) licensing, letting any account on an activated machine use Pro for free. Add them in GitHub → Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_PLATFORM: win32
           SKIP_ICON_GENERATION: 'true'
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+          NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
 
       - name: Bundle models and binaries
         run: npm run prebuild
