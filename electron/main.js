@@ -371,6 +371,20 @@ async function checkDeviceLimit(email) {
     }
 
     try {
+        // Fast path: if this device already registered for this email on a previous
+        // login, skip the blocking Drive roundtrip. checkRegistryBackground() still
+        // re-verifies against the cloud registry shortly after login and evicts if needed.
+        const regCachePath = path.join(app.getPath('userData'), 'device-registration-cache.json');
+        try {
+            if (fs.existsSync(regCachePath)) {
+                const cache = JSON.parse(fs.readFileSync(regCachePath, 'utf8'));
+                if (cache.email === email.toLowerCase().trim() && cache.hwid === hwid) {
+                    console.log('[MediScribe] Device registration cached — skipping blocking limit check.');
+                    return { success: true };
+                }
+            }
+        } catch (cacheErr) { /* fall through to full check */ }
+
         // We use a temporary local file to fetch/save registry
         const tempPath = path.join(app.getPath('temp'), DEVICE_REGISTRY_FILE);
 
@@ -387,6 +401,7 @@ async function checkDeviceLimit(email) {
 
         if (userDevices.includes(hwid)) {
             console.log('[MediScribe] Device already registered.');
+            try { fs.writeFileSync(regCachePath, JSON.stringify({ email: email.toLowerCase().trim(), hwid })); } catch (e) {}
             return { success: true };
         }
 
@@ -423,6 +438,7 @@ async function checkDeviceLimit(email) {
         await driveSync.uploadFile(DEVICE_REGISTRY_FILE, tempPath);
 
         console.log(`[MediScribe] Registered new device ${hwid} for ${email}`);
+        try { fs.writeFileSync(regCachePath, JSON.stringify({ email: email.toLowerCase().trim(), hwid })); } catch (e) {}
         return { success: true };
     } catch (err) {
         console.error('[MediScribe] Device limit check failed:', err);
@@ -476,6 +492,11 @@ async function checkRegistryBackground(email) {
 async function removeDeviceFromRegistry(email) {
     const hwid = getMachineId();
     console.log(`[MediScribe] Removing device ${hwid} from registry for ${email}`);
+    // Invalidate the fast-path registration cache so the next login re-checks the cloud registry
+    try {
+        const regCachePath = path.join(app.getPath('userData'), 'device-registration-cache.json');
+        if (fs.existsSync(regCachePath)) fs.unlinkSync(regCachePath);
+    } catch (e) {}
     try {
         if (!(await driveSync.initialize())) {
             console.warn('[MediScribe] Cloud Drive not available to remove device.');
@@ -3188,16 +3209,23 @@ app.whenReady().then(() => {
                 }
 
                 activeUserEmail = email.toLowerCase().trim();
-                console.log('[MediScribe] Google Auth success. Starting initial sync...');
+                console.log('[MediScribe] Google Auth success. Starting initial sync in background...');
 
-                // Initial sync: Pull dictionary and keywords from Drive if they exist
-                await driveSync.sync('user-keywords.json', keywordLibraryPath);
-                await driveSync.sync('user-dictionary.json', dictionaryPath);
-
-                // Reload data into memory
-                loadKeywordLibrary();
-                loadDictionary();
-                if (spellChecker) reloadSpellChecker();
+                // Initial sync: Pull dictionary and keywords from Drive if they exist.
+                // Run in the BACKGROUND so login isn't blocked by Drive roundtrips —
+                // the user can enter the app immediately and data refreshes when ready.
+                (async () => {
+                    try {
+                        await driveSync.sync('user-keywords.json', keywordLibraryPath);
+                        await driveSync.sync('user-dictionary.json', dictionaryPath);
+                        loadKeywordLibrary();
+                        loadDictionary();
+                        if (spellChecker) reloadSpellChecker();
+                        console.log('[MediScribe] Background initial sync complete.');
+                    } catch (syncErr) {
+                        console.error('[MediScribe] Background initial sync failed:', syncErr);
+                    }
+                })();
 
                 return { success: true, user: email, idToken: result.tokens ? result.tokens.id_token : null };
             }
