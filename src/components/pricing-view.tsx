@@ -99,6 +99,8 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
     try {
       const result = await (window as any).electron?.activateAfterPayment?.({
         payment_id: paymentId,
+        owner_email: currentUser || auth?.currentUser?.email || '',
+        owner_uid: auth?.currentUser?.uid || '',
       });
 
       if (result?.success) {
@@ -279,6 +281,8 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
                         currency: currency.code,
                         amount: amount,
                         activation_id: activationId,
+                        owner_email: currentUser || auth?.currentUser?.email || '',
+                        owner_uid: auth?.currentUser?.uid || '',
                     });
 
                     if (result?.success) {

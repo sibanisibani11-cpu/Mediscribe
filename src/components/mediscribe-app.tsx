@@ -13,7 +13,7 @@ import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
 import { db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, onSnapshot, getDoc, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -205,6 +205,50 @@ export function MediScribeApp() {
                     new Date(local.expiresAt) > new Date() &&
                     local.billing !== 'developer'
                   ) {
+                    // ── Ownership guards ─────────────────────────────────────
+                    // The local license is machine-level; without these checks any
+                    // account signing in on a licensed PC could claim it as its own.
+
+                    // 1. Already claimed by another account on this machine → never migrate again.
+                    if (local.migrated_to) {
+                      console.log('[MediScribe] Local license already migrated; skipping.');
+                      return;
+                    }
+
+                    // 2. License records its purchaser → only that account may claim it.
+                    if (local.owner_email || local.owner_uid) {
+                      const emailMatch = local.owner_email &&
+                        currentUser &&
+                        local.owner_email === currentUser.toLowerCase().trim();
+                      const uidMatch = local.owner_uid &&
+                        currentUserUid &&
+                        local.owner_uid === currentUserUid;
+                      if (!emailMatch && !uidMatch) {
+                        console.log('[MediScribe] Local license belongs to a different account; skipping migration.');
+                        return;
+                      }
+                    } else {
+                      // 3. Legacy license (no purchaser recorded) → make sure no other
+                      // Firestore account has already claimed this payment_id.
+                      try {
+                        const claimQuery = query(
+                          collection(db, 'users'),
+                          where('licenseDetails.payment_id', '==', local.payment_id)
+                        );
+                        const claimSnap = await getDocs(claimQuery);
+                        const claimedByOther = claimSnap.docs.some((d: any) => d.id !== userDocKey);
+                        if (claimedByOther) {
+                          console.log('[MediScribe] payment_id already claimed by another account; skipping migration.');
+                          return;
+                        }
+                      } catch (claimErr) {
+                        // Fail closed: if we can't verify, don't migrate.
+                        console.error('[MediScribe] Could not verify license claim; skipping migration.', claimErr);
+                        return;
+                      }
+                    }
+                    // ─────────────────────────────────────────────────────────
+
                     const userDocRef = doc(db, "users", userDocKey);
                     await setDoc(userDocRef, {
                       isActivated: true,
@@ -217,6 +261,11 @@ export function MediScribeApp() {
                         migratedFromLocalLicense: true,
                       },
                     }, { merge: true });
+                    // Stamp the local file so no other account can re-claim it.
+                    await (window.electron as any).markLicenseMigrated?.({
+                      email: currentUser || '',
+                      uid: currentUserUid || '',
+                    });
                     console.log('[MediScribe] Migrated local paid license to Firestore.');
                     // onSnapshot will fire again and flip isActivated to true
                   }

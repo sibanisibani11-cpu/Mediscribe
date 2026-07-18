@@ -593,8 +593,8 @@ async function verifyLicensePaymentOnline(paymentId) {
 
 function checkActivationStatus() {
     const email = getCurrentUserEmail();
-    if (email) {
-        const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email ? email.toLowerCase().trim() : null;
+    if (normalizedEmail) {
         if (
             normalizedEmail === 'jeetumdc@gmail.com' ||
             normalizedEmail === 'test@mediapp.store' ||
@@ -614,6 +614,13 @@ function checkActivationStatus() {
 
         // Also check if the email is present and valid
         if (!data.hwid || !data.code) return false;
+
+        // Ownership check: a license bought by one account must not grant Pro
+        // to a different account signed in on the same machine. Licenses
+        // written before this field existed (legacy) are grandfathered in.
+        if (data.owner_email && normalizedEmail && data.owner_email !== normalizedEmail) {
+            return false;
+        }
 
         if (data.hwid === currentHwid && data.code === expectedCode) {
             const exp = getExpirationDate(data);
@@ -3415,6 +3422,27 @@ app.whenReady().then(() => {
         return checkActivationStatus();
     });
 
+    // Stamp the local license as claimed by a specific account so it can never be
+    // migrated into a second Firestore account (fixes license leak when another
+    // user signs in on an already-licensed machine).
+    ipcMain.handle('mark-license-migrated', (event, claim) => {
+        try {
+            if (!fs.existsSync(licensePath)) return { success: false, error: 'No license file.' };
+            const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
+            if (data.migrated_to) return { success: false, error: 'Already migrated.' };
+            data.migrated_to = {
+                email: (claim?.email || '').toLowerCase().trim(),
+                uid: claim?.uid || '',
+                date: new Date().toISOString(),
+            };
+            fs.writeFileSync(licensePath, JSON.stringify(data, null, 2));
+            return { success: true };
+        } catch (err) {
+            console.error('[Licensing] Failed to mark license as migrated:', err);
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle('get-license-details', () => {
         if (isDeveloperSubscriptionBypassEnabled()) {
             const currentHwid = getMachineId();
@@ -3432,6 +3460,14 @@ app.whenReady().then(() => {
             const data = JSON.parse(fs.readFileSync(licensePath, 'utf8'));
             const currentHwid = getMachineId();
             const expectedCode = generateActivationCode(currentHwid);
+
+            // Ownership check — see checkActivationStatus() for rationale.
+            const email = getCurrentUserEmail();
+            const normalizedEmail = email ? email.toLowerCase().trim() : null;
+            if (data.owner_email && normalizedEmail && data.owner_email !== normalizedEmail) {
+                return null;
+            }
+
             if (data.hwid === currentHwid && data.code === expectedCode) {
                 if (!data.expiresAt) {
                     data.expiresAt = getExpirationDate(data).toISOString();
@@ -3459,7 +3495,7 @@ app.whenReady().then(() => {
 
     ipcMain.handle('activate-after-payment', async (event, paymentData) => {
         console.log('[Licensing] activate-after-payment called with:', paymentData);
-        let { payment_id, plan_id, billing, currency, amount, activation_id } = paymentData || {};
+        let { payment_id, plan_id, billing, currency, amount, activation_id, owner_email, owner_uid } = paymentData || {};
         
         if (!payment_id) {
             return { success: false, error: 'No payment ID provided.' };
@@ -3632,6 +3668,12 @@ app.whenReady().then(() => {
                 billing: finalBilling,
                 currency: currency || 'INR',
                 amount: amount || 149,
+                // Purchaser identity — used to ensure only the buyer's account can
+                // claim this license during the local→Firestore migration.
+                // (Named owner_email, NOT email: the v1.0.3 startup cleanup deletes
+                // license files containing a legacy 'email' field.)
+                owner_email: (owner_email || '').toLowerCase().trim() || undefined,
+                owner_uid: owner_uid || undefined,
             };
 
             fs.writeFileSync(licensePath, JSON.stringify(licenseData, null, 2));

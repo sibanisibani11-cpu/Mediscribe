@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('electron', {
   activateApp: (code) => ipcRenderer.invoke('activate-app', code),
   getActivationId: () => ipcRenderer.invoke('get-activation-id'),
   activateAfterPayment: (paymentData) => ipcRenderer.invoke('activate-after-payment', paymentData),
+  markLicenseMigrated: (claim) => ipcRenderer.invoke('mark-license-migrated', claim),
 
   // Auto-Updater
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
