@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
@@ -13,7 +13,7 @@ import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
 import { db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, onSnapshot, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -45,8 +45,6 @@ export function MediScribeApp() {
   }>({ status: 'idle' });
 
   const { toast } = useToast();
-  // Guard so the local-license → Firestore migration only runs once per session
-  const licenseMigrationAttempted = useRef(false);
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
@@ -180,7 +178,12 @@ export function MediScribeApp() {
           let userData = docSnap.exists() ? docSnap.data() : null;
           
           const handleUserData = (data: any) => {
-            const active = !!(data && data.isActivated);
+            // Pro requires BOTH an activated flag AND an unexpired subscription.
+            // A subscription with a past expiresAt is treated as inactive even if
+            // isActivated was never flipped off in Firestore.
+            const notExpired = !data?.licenseDetails?.expiresAt ||
+              new Date(data.licenseDetails.expiresAt) > new Date();
+            const active = !!(data && data.isActivated && notExpired);
             setIsActivated(active);
 
             if (data && data.licenseDetails) {
@@ -189,91 +192,11 @@ export function MediScribeApp() {
               setLicenseDetails(null);
             }
 
-            // One-time migration: users who paid while the app ran in local-license
-            // mode have a valid paid license on this machine but no Firestore record.
-            // Push it to their Firestore doc so they keep Pro after the switch to
-            // per-user (Firestore) licensing.
-            if (!active && isElectron && !licenseMigrationAttempted.current) {
-              licenseMigrationAttempted.current = true;
-              (window.electron as any).getLicenseDetails?.().then(async (local: any) => {
-                try {
-                  // Only migrate real purchases: must have a payment_id and not be expired
-                  if (
-                    local &&
-                    local.payment_id &&
-                    local.expiresAt &&
-                    new Date(local.expiresAt) > new Date() &&
-                    local.billing !== 'developer'
-                  ) {
-                    // ── Ownership guards ─────────────────────────────────────
-                    // The local license is machine-level; without these checks any
-                    // account signing in on a licensed PC could claim it as its own.
-
-                    // 1. Already claimed by another account on this machine → never migrate again.
-                    if (local.migrated_to) {
-                      console.log('[MediScribe] Local license already migrated; skipping.');
-                      return;
-                    }
-
-                    // 2. License records its purchaser → only that account may claim it.
-                    if (local.owner_email || local.owner_uid) {
-                      const emailMatch = local.owner_email &&
-                        currentUser &&
-                        local.owner_email === currentUser.toLowerCase().trim();
-                      const uidMatch = local.owner_uid &&
-                        currentUserUid &&
-                        local.owner_uid === currentUserUid;
-                      if (!emailMatch && !uidMatch) {
-                        console.log('[MediScribe] Local license belongs to a different account; skipping migration.');
-                        return;
-                      }
-                    } else {
-                      // 3. Legacy license (no purchaser recorded) → make sure no other
-                      // Firestore account has already claimed this payment_id.
-                      try {
-                        const claimQuery = query(
-                          collection(db, 'users'),
-                          where('licenseDetails.payment_id', '==', local.payment_id)
-                        );
-                        const claimSnap = await getDocs(claimQuery);
-                        const claimedByOther = claimSnap.docs.some((d: any) => d.id !== userDocKey);
-                        if (claimedByOther) {
-                          console.log('[MediScribe] payment_id already claimed by another account; skipping migration.');
-                          return;
-                        }
-                      } catch (claimErr) {
-                        // Fail closed: if we can't verify, don't migrate.
-                        console.error('[MediScribe] Could not verify license claim; skipping migration.', claimErr);
-                        return;
-                      }
-                    }
-                    // ─────────────────────────────────────────────────────────
-
-                    const userDocRef = doc(db, "users", userDocKey);
-                    await setDoc(userDocRef, {
-                      isActivated: true,
-                      licenseDetails: {
-                        billing: local.billing || 'monthly',
-                        expiresAt: local.expiresAt,
-                        date: local.date || new Date().toISOString(),
-                        hwid: local.hwid || '',
-                        payment_id: local.payment_id,
-                        migratedFromLocalLicense: true,
-                      },
-                    }, { merge: true });
-                    // Stamp the local file so no other account can re-claim it.
-                    await (window.electron as any).markLicenseMigrated?.({
-                      email: currentUser || '',
-                      uid: currentUserUid || '',
-                    });
-                    console.log('[MediScribe] Migrated local paid license to Firestore.');
-                    // onSnapshot will fire again and flip isActivated to true
-                  }
-                } catch (migrationErr) {
-                  console.error('[MediScribe] Local license migration failed:', migrationErr);
-                }
-              }).catch(() => {});
-            }
+            // NOTE: the old local→Firestore license migration was removed here.
+            // It allowed unverified local license files (written by pre-v1.1.6
+            // builds that skipped payment verification) to be laundered into
+            // Firestore as paid licenses. Firestore is now the only source of
+            // truth for Pro activation.
           };
 
           if (!userData && currentUserUid && currentUserUid !== currentUser) {

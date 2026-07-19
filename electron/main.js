@@ -616,8 +616,20 @@ function checkActivationStatus() {
         if (!data.hwid || !data.code) return false;
 
         // Ownership check: a license bought by one account must not grant Pro
-        // to a different account signed in on the same machine. Licenses
-        // written before this field existed (legacy) are grandfathered in.
+        // to a different account signed in on the same machine.
+        // Legacy licenses with no recorded purchaser are NO LONGER grandfathered:
+        // they were written by pre-v1.1.6 builds that skipped payment verification,
+        // so they cannot be trusted. Delete them on sight.
+        const isDevBypass = process.env.NODE_ENV === 'development' || process.env.DEV_SUBSCRIPTION_BYPASS === 'true';
+        if (!data.owner_email && !isDevBypass) {
+            try {
+                fs.unlinkSync(licensePath);
+                console.log('[Licensing] Deleted untrusted legacy license (no recorded purchaser).');
+            } catch (err) {
+                console.error('[Licensing] Failed to delete legacy license file:', err);
+            }
+            return false;
+        }
         if (data.owner_email && normalizedEmail && data.owner_email !== normalizedEmail) {
             return false;
         }
@@ -3462,9 +3474,13 @@ app.whenReady().then(() => {
             const expectedCode = generateActivationCode(currentHwid);
 
             // Ownership check — see checkActivationStatus() for rationale.
+            // Legacy licenses without a recorded purchaser are untrusted.
             const email = getCurrentUserEmail();
             const normalizedEmail = email ? email.toLowerCase().trim() : null;
-            if (data.owner_email && normalizedEmail && data.owner_email !== normalizedEmail) {
+            if (!data.owner_email) {
+                return null;
+            }
+            if (normalizedEmail && data.owner_email !== normalizedEmail) {
                 return null;
             }
 
