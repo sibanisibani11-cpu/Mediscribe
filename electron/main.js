@@ -3434,6 +3434,64 @@ app.whenReady().then(() => {
         return checkActivationStatus();
     });
 
+    // ── Offline subscription cache ──────────────────────────────────────────
+    // After a SUCCESSFUL online Firestore verification the renderer stores a
+    // signed snapshot of the subscription here. If the app later starts with
+    // no internet, this cached record grants Pro — but only until the
+    // subscription's own expiresAt. Expired = paywall, online or offline.
+    // The record is HMAC-signed with a machine-bound key so editing the file
+    // or copying it to another machine invalidates it.
+    const subscriptionCachePath = () => path.join(app.getPath('userData'), 'subscription-cache.json');
+
+    const signSubscriptionRecord = (rec) => {
+        const payload = [rec.email, rec.uid, rec.isActivated, rec.expiresAt, rec.billing, rec.verifiedAt, rec.hwid].join('|');
+        return crypto.createHmac('sha256', 'mediscribe-subcache-v1:' + getMachineId()).update(payload).digest('hex');
+    };
+
+    ipcMain.handle('save-subscription-cache', (event, record) => {
+        try {
+            if (!record || !record.email) return { success: false, error: 'Missing account email.' };
+            const rec = {
+                email: String(record.email).toLowerCase().trim(),
+                uid: record.uid || '',
+                isActivated: !!record.isActivated,
+                expiresAt: record.expiresAt || null,
+                billing: record.billing || null,
+                verifiedAt: new Date().toISOString(),
+                hwid: getMachineId(),
+            };
+            rec.sig = signSubscriptionRecord(rec);
+            fs.writeFileSync(subscriptionCachePath(), JSON.stringify(rec, null, 2));
+            return { success: true };
+        } catch (err) {
+            console.error('[Licensing] Failed to save subscription cache:', err);
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('get-subscription-cache', () => {
+        try {
+            const p = subscriptionCachePath();
+            if (!fs.existsSync(p)) return null;
+            const rec = JSON.parse(fs.readFileSync(p, 'utf8'));
+            // Machine-bound: reject records copied from another computer.
+            if (rec.hwid !== getMachineId()) return null;
+            // Tamper check.
+            if (rec.sig !== signSubscriptionRecord(rec)) {
+                console.warn('[Licensing] Subscription cache signature mismatch — ignoring.');
+                return null;
+            }
+            // Hard stop at the subscription's own expiry: after this date the
+            // cache grants nothing, so offline use ends exactly when the plan does.
+            if (!rec.expiresAt || new Date(rec.expiresAt) <= new Date()) return null;
+            if (!rec.isActivated) return null;
+            return rec;
+        } catch (err) {
+            console.error('[Licensing] Failed to read subscription cache:', err);
+            return null;
+        }
+    });
+
     // Stamp the local license as claimed by a specific account so it can never be
     // migrated into a second Firestore account (fixes license leak when another
     // user signs in on an already-licensed machine).

@@ -76,6 +76,8 @@ contextBridge.exposeInMainWorld('electron', {
   // Activation & Licensing
   checkActivation: () => ipcRenderer.invoke('check-activation'),
   getLicenseDetails: () => ipcRenderer.invoke('get-license-details'),
+  saveSubscriptionCache: (record) => ipcRenderer.invoke('save-subscription-cache', record),
+  getSubscriptionCache: () => ipcRenderer.invoke('get-subscription-cache'),
   activateApp: (code) => ipcRenderer.invoke('activate-app', code),
   getActivationId: () => ipcRenderer.invoke('get-activation-id'),
   activateAfterPayment: (paymentData) => ipcRenderer.invoke('activate-after-payment', paymentData),

@@ -169,14 +169,55 @@ export function MediScribeApp() {
     }
 
     let unsubscribeFirestore: (() => void) | null = null;
+    let offlineTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (isFirebaseConfigured && db && currentUser) {
       try {
         const userDocKey = currentUserUid || currentUser;
-        
+        let resolvedFromServer = false;
+
+        // Offline fallback: if the live Firestore check can't complete (no
+        // internet), trust the locally cached record of the LAST successful
+        // online verification — but only for the same account, and only until
+        // the subscription's own expiresAt (the cache returns null after that).
+        // Expired or missing cache → paywall, offline or not.
+        const tryOfflineCache = async () => {
+          if (resolvedFromServer) return;
+          try {
+            const cached = isElectron
+              ? await (window.electron as any).getSubscriptionCache?.()
+              : null;
+            const sameAccount = cached && (
+              (currentUser && cached.email === currentUser.toLowerCase().trim()) ||
+              (currentUserUid && cached.uid && cached.uid === currentUserUid)
+            );
+            if (sameAccount) {
+              console.log('[MediScribe] Offline: using cached verified subscription (valid until ' + cached.expiresAt + ').');
+              setIsActivated(true);
+              setLicenseDetails({ billing: cached.billing, expiresAt: cached.expiresAt, offlineCache: true });
+            } else {
+              setIsActivated(false);
+              setLicenseDetails(null);
+            }
+          } catch {
+            setIsActivated(false);
+            setLicenseDetails(null);
+          }
+        };
+
+        // If no authoritative snapshot arrives within 10s, assume we're offline.
+        offlineTimer = setTimeout(tryOfflineCache, 10000);
+
         unsubscribeFirestore = onSnapshot(doc(db, "users", userDocKey), (docSnap: any) => {
+          // Snapshots served from the SDK's local cache are not authoritative —
+          // ignore them and let the offline fallback decide instead.
+          if (docSnap.metadata?.fromCache) return;
+
+          resolvedFromServer = true;
+          if (offlineTimer) clearTimeout(offlineTimer);
+
           let userData = docSnap.exists() ? docSnap.data() : null;
-          
+
           const handleUserData = (data: any) => {
             // Pro requires BOTH an activated flag AND an unexpired subscription.
             // A subscription with a past expiresAt is treated as inactive even if
@@ -190,6 +231,19 @@ export function MediScribeApp() {
               setLicenseDetails(data.licenseDetails);
             } else {
               setLicenseDetails(null);
+            }
+
+            // Persist this ONLINE-VERIFIED result for offline grace. The main
+            // process signs it and binds it to this machine; it self-expires
+            // at the subscription's expiresAt.
+            if (isElectron) {
+              (window.electron as any).saveSubscriptionCache?.({
+                email: currentUser,
+                uid: currentUserUid || '',
+                isActivated: active,
+                expiresAt: data?.licenseDetails?.expiresAt || null,
+                billing: data?.licenseDetails?.billing || null,
+              })?.catch?.(() => {});
             }
 
             // NOTE: the old local→Firestore license migration was removed here.
@@ -216,6 +270,7 @@ export function MediScribeApp() {
           }
         }, (error: any) => {
           console.error("Firestore sync error:", error);
+          tryOfflineCache();
         });
       } catch (err) {
         console.error("Failed to start Firestore subscription listener:", err);
@@ -242,6 +297,9 @@ export function MediScribeApp() {
     return () => {
       if (unsubscribeFirestore) {
         unsubscribeFirestore();
+      }
+      if (offlineTimer) {
+        clearTimeout(offlineTimer);
       }
     };
   }, [isMounted, isElectron, currentUser, currentUserUid, isLifetimeFree]);
