@@ -3469,6 +3469,63 @@ app.whenReady().then(() => {
         }
     });
 
+    // ── Offline login session ───────────────────────────────────────────────
+    // After a successful ONLINE login (email/password or Google), the renderer
+    // stores the signed identity of the signed-in account. On a later launch
+    // with no internet, this restores the session so the user isn't stuck at
+    // the login screen. Pro access is still governed separately by the
+    // subscription cache above. Cleared on logout.
+    const authSessionPath = () => path.join(app.getPath('userData'), 'auth-session.json');
+
+    const signAuthSession = (rec) => {
+        const payload = [rec.email, rec.uid, rec.savedAt, rec.hwid].join('|');
+        return crypto.createHmac('sha256', 'mediscribe-authsession-v1:' + getMachineId()).update(payload).digest('hex');
+    };
+
+    ipcMain.handle('save-auth-session', (event, record) => {
+        try {
+            if (!record || !record.email) return { success: false, error: 'Missing account email.' };
+            const rec = {
+                email: String(record.email).toLowerCase().trim(),
+                uid: record.uid || '',
+                savedAt: new Date().toISOString(),
+                hwid: getMachineId(),
+            };
+            rec.sig = signAuthSession(rec);
+            fs.writeFileSync(authSessionPath(), JSON.stringify(rec, null, 2));
+            return { success: true };
+        } catch (err) {
+            console.error('[Auth] Failed to save auth session:', err);
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('get-auth-session', () => {
+        try {
+            const p = authSessionPath();
+            if (!fs.existsSync(p)) return null;
+            const rec = JSON.parse(fs.readFileSync(p, 'utf8'));
+            if (rec.hwid !== getMachineId()) return null;
+            if (rec.sig !== signAuthSession(rec)) {
+                console.warn('[Auth] Auth session signature mismatch — ignoring.');
+                return null;
+            }
+            return rec;
+        } catch (err) {
+            console.error('[Auth] Failed to read auth session:', err);
+            return null;
+        }
+    });
+
+    ipcMain.handle('clear-auth-session', () => {
+        try {
+            if (fs.existsSync(authSessionPath())) fs.unlinkSync(authSessionPath());
+            return { success: true };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle('get-subscription-cache', () => {
         try {
             const p = subscriptionCachePath();

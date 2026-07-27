@@ -89,13 +89,32 @@ export function MediScribeApp() {
       }
     }
 
-    // Auto-login if already connected to Google
+    // Auto-login if already connected to Google, otherwise restore the last
+    // signed-in session (works offline — signed + machine-bound record saved
+    // by the main process after the last successful online login).
     if (isElectron) {
       (window.electron as any).getGoogleStatus?.().then((res: any) => {
         if (res.connected) {
           setIsAuthenticated(true);
           setCurrentUser(res.userEmail || "Google User");
+        } else {
+          (window.electron as any).getAuthSession?.().then((session: any) => {
+            if (session && session.email) {
+              console.log('[MediScribe] Restored saved login session for', session.email);
+              setIsAuthenticated(true);
+              setCurrentUser(session.email);
+              if (session.uid) setCurrentUserUid(session.uid);
+            }
+          }).catch(() => {});
         }
+      }).catch(() => {
+        (window.electron as any).getAuthSession?.().then((session: any) => {
+          if (session && session.email) {
+            setIsAuthenticated(true);
+            setCurrentUser(session.email);
+            if (session.uid) setCurrentUserUid(session.uid);
+          }
+        }).catch(() => {});
       });
     }
 
@@ -315,6 +334,10 @@ export function MediScribeApp() {
       } catch (e) {
         console.error('[MediScribe] Error during logout device cleanup:', e);
       }
+      // Explicit logout invalidates the saved offline session.
+      try {
+        await (window.electron as any).clearAuthSession?.();
+      } catch {}
     }
     setIsAuthenticated(false);
     setCurrentUser(null);
@@ -361,6 +384,11 @@ export function MediScribeApp() {
       setIsAuthenticated(true);
       setCurrentUser(user);
       setCurrentUserUid(uid || user);
+      // Remember this login so future launches (including offline) skip the
+      // login screen. Signed + machine-bound; cleared on logout.
+      if (isElectron) {
+        (window.electron as any).saveAuthSession?.({ email: user, uid: uid || '' })?.catch?.(() => {});
+      }
     }} />;
   }
 
