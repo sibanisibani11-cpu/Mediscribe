@@ -379,7 +379,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
       price: getDiscountedPrice(currency.monthly).toString(),
       originalPrice: appliedPromo ? currency.monthly.toString() : null,
       period: "/month",
-      description: "Perfect for testing the waters of AI-powered medical transcription.",
+      description: "Full Pro access with flexible monthly billing for individual practitioners.",
       features: [
         "Unlimited Dictation Mode",
         "Full Keyword Library Expansion",
@@ -401,7 +401,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
       description: "The best value for individual practitioners and small clinics.",
       features: [
         "Everything in Monthly",
-        `2 Months Free (${currency.symbol}${currency.monthly * 2} Savings)`,
+        `Save ${currency.symbol}${currency.monthly * 2} vs Monthly Billing`,
         "Priority AI Processing",
         "Early Access to New Features",
         "Priority Support",
