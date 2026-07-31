@@ -460,7 +460,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
           Pricing Plans
         </div>
         <h2 className="text-3xl md:text-5xl font-black cobalt-gradient-text uppercase italic tracking-tighter italic">
-          Upgrade to MediScribe <span className="text-violet-600">Pro</span>
+          Subscribe to MediScribe <span className="text-violet-600">Pro</span>
         </h2>
         <p className="text-slate-500 dark:text-slate-400 max-w-lg text-sm font-medium">
           Choose the plan that fits your clinical workflow. Save more with an annual subscription.
