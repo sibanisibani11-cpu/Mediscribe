@@ -41,6 +41,31 @@ export function AuthPage({ onLogin }: AuthPageProps) {
         setIsLoading(true);
 
         try {
+            const normalizedEmail = email.toLowerCase().trim();
+            const isTestAccount = (normalizedEmail === 'test@mediapp.store' || normalizedEmail === 'reviewer@mediapp.store') && password === 'Password123!';
+
+            // Check local simulated signin / test account credentials first (allows MS Store reviewers and local test accounts)
+            if (isLogin) {
+                if ((window as any).electron?.localSimSignin) {
+                    const check = await (window as any).electron.localSimSignin(email, password);
+                    if (check && check.success) {
+                        toast({
+                            title: "Welcome back!",
+                            description: "You have successfully logged in.",
+                        });
+                        onLogin(email, email);
+                        return;
+                    }
+                } else if (isTestAccount) {
+                    toast({
+                        title: "Welcome back!",
+                        description: "You have successfully logged in.",
+                    });
+                    onLogin(email, email);
+                    return;
+                }
+            }
+
             if (isFirebaseConfigured && auth && db) {
                 let uid = "";
                 if (isLogin) {
