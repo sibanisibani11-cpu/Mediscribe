@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MediScribe</string>
+    <string name="title_activity_main">MediScribe</string>
+    <string name="package_name">com.mediapp.mediscribe</string>
+    <string name="custom_url_scheme">com.mediapp.mediscribe</string>
+</resources>

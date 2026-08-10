@@ -20,6 +20,8 @@
     "build:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish=never",
     "build:win": "npm run build && electron-builder --win --publish=never",
     "build:linux": "npm run build && electron-builder --linux --publish=never",
+    "build:android": "npm run build && npx cap sync android && cd android && ./gradlew bundleRelease assembleRelease",
+    "cap:sync": "npm run build && npx cap sync android",
     "dist": "npm run build && electron-builder --publish=never",
     "dist:personal-win": "export NEXT_PUBLIC_PERSONAL_LIFETIME_FREE=true && touch electron/lifetime.lock && npm run build && electron-builder --win --publish=never && rm electron/lifetime.lock",
     "bundle-models": "node scripts/bundle-models.js",
