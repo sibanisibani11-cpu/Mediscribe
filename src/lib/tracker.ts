@@ -83,7 +83,7 @@ export async function trackAppLaunch(info: UserTrackingInfo) {
           hwid: info.hwid || undefined,
           is_pro: isPro,
           plan: plan,
-          app_version: info.appVersion || '1.1.23',
+          app_version: info.appVersion || '1.1.24',
           os: info.os || (typeof navigator !== 'undefined' ? navigator.userAgent : undefined),
           last_active_at: nowIso,
         });
@@ -91,7 +91,7 @@ export async function trackAppLaunch(info: UserTrackingInfo) {
         posthog.capture('app_open', {
           is_pro: isPro,
           plan: plan,
-          app_version: info.appVersion || '1.1.23',
+          app_version: info.appVersion || '1.1.24',
         });
       } catch (phErr) {
         console.warn('[MediScribe Tracker] PostHog trackAppLaunch error:', phErr);
@@ -107,7 +107,7 @@ export async function trackAppLaunch(info: UserTrackingInfo) {
           email: info.email || null,
           is_pro: isPro,
           plan: plan,
-          app_version: info.appVersion || '1.1.23',
+          app_version: info.appVersion || '1.1.24',
           os: info.os || (typeof navigator !== 'undefined' ? (navigator.userAgent.includes('Mac') ? 'macOS' : navigator.userAgent.includes('Win') ? 'Windows' : 'Other') : 'Desktop'),
           last_active_at: nowIso,
         };

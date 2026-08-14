@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.1.23",
+  "version": "1.1.24",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -287,8 +287,7 @@
       "include": "build/installer.nsh"
     },
     "dmg": {
-      "format": "UDZO",
-      "title": "MediScribe ${version}",
+      "title": "MediScribe",
       "icon": "icon.png",
       "backgroundColor": "#1a1a2e",
       "contents": [
@@ -305,5 +304,6 @@
         }
       ]
     }
+
   }
 }
