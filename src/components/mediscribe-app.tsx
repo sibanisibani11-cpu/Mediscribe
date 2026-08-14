@@ -14,6 +14,7 @@ import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
 import { db, isFirebaseConfigured } from "../lib/firebase";
 import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { trackAppLaunch } from "../lib/tracker";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
 const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod) => mod.DictionaryManager), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictionary manager…</div> });
@@ -322,6 +323,35 @@ export function MediScribeApp() {
       }
     };
   }, [isMounted, isElectron, currentUser, currentUserUid, isLifetimeFree]);
+
+  // Track app launch / session and sync active user status to PostHog & Supabase
+  useEffect(() => {
+    if (!isMounted || isActivated === null) return;
+
+    if (isElectron) {
+      (window.electron as any).getActivationId?.().then((id: string) => {
+        trackAppLaunch({
+          hwid: id || null,
+          email: currentUser,
+          isPro: isActivated,
+          plan: licenseDetails?.billing || (isActivated ? 'pro' : 'free'),
+        });
+      }).catch(() => {
+        trackAppLaunch({
+          email: currentUser,
+          isPro: isActivated,
+          plan: licenseDetails?.billing || (isActivated ? 'pro' : 'free'),
+        });
+      });
+    } else {
+      trackAppLaunch({
+        email: currentUser,
+        isPro: isActivated,
+        plan: licenseDetails?.billing || (isActivated ? 'pro' : 'free'),
+      });
+    }
+  }, [isMounted, isActivated, currentUser, licenseDetails?.billing, isElectron]);
+
 
   const handleLogout = async () => {
     // Always call googleLogout via Electron — this removes the device from

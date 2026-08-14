@@ -6,7 +6,9 @@ import { useToast } from "../hooks/use-toast";
 import { ModelSelector } from "./model-selector";
 import { OllamaSelector } from "./ollama-selector";
 import { WhisperServerStatus } from "./whisper-server-status";
-import { isElectron, isMobile } from "../lib/platform";
+import { isElectron } from "../lib/platform";
+import { trackDictationCompleted } from "../lib/tracker";
+
 
 type RecordingState = "idle" | "recording" | "transcribing" | "done";
 
@@ -280,6 +282,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
           const text = result.text?.trim() || '';
           if (text) {
             await (window.electron as any).typeText?.(text, false);
+            trackDictationCompleted({ modelUsed: 'whisper' });
             toast({ title: "Text typed successfully" });
           } else {
             finalState = "idle";

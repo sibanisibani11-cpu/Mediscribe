@@ -7,6 +7,7 @@ import { cn, openExternalUrl } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
 import { auth, db, isFirebaseConfigured } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { trackProActivation } from "../lib/tracker";
 
 interface PricingViewProps {
   onBack: () => void;
@@ -104,6 +105,14 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
       });
 
       if (result?.success) {
+        // Track Pro activation in PostHog and Supabase
+        trackProActivation({
+          hwid: activationId || null,
+          email: currentUser || auth?.currentUser?.email || null,
+          plan: 'pro',
+          paymentId: paymentId,
+        });
+
         toast({
           title: "🎉 Pro License Activated!",
           description: "Your license has been successfully verified! Reloading...",
@@ -257,7 +266,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
         }
 
         const options = {
-            key: "rzp_live_SiXmXO4YoPaPyF",
+            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_SiXmXO4YoPaPyF",
             amount: amount * 100, // Amount in paise / cents
             currency: currency.code,
             name: "MediScribe Pro",
@@ -313,6 +322,16 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
                             }
                         }
 
+                        // Track Pro activation in PostHog & Supabase
+                        trackProActivation({
+                            hwid: activationId || null,
+                            email: currentUser || auth?.currentUser?.email || null,
+                            plan: planId === 'yearly' ? 'yearly' : 'monthly',
+                            amount: amount,
+                            currency: currency.code,
+                            paymentId: response.razorpay_payment_id,
+                        });
+
                         toast({
                             title: "🎉 Pro License Activated!",
                             description: "Welcome to MediScribe Pro. Reloading now...",
@@ -339,7 +358,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
             },
             prefill: {
                 name: "Doctor",
-                email: "",
+                email: currentUser || auth?.currentUser?.email || "",
             },
             notes: {
                 activation_id: activationId,

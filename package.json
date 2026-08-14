@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.1.21",
+  "version": "1.1.22",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -34,9 +34,11 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx --cache --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",
     "lint:fix": "eslint . --ext .ts,.tsx --cache --fix --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",
+    "subscribers": "node scripts/list-subscribers.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "dictionary-en": "^4.0.0",
     "dotenv": "^16.5.0",
     "electron-updater": "^6.8.3",
@@ -44,6 +46,7 @@
     "google-auth-library": "^10.5.0",
     "googleapis": "^169.0.0",
     "nspell": "^2.1.5",
+    "posthog-js": "^1.417.0",
     "uiohook-napi": "^1.5.4"
   },
   "devDependencies": {

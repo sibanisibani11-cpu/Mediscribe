@@ -60,6 +60,10 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+*-firebase-adminsdk-*.json
+firebase-admin-*.json
+service-account*.json
+
 # Ignore large installer files to prevent git push errors
 /public/downloads/*.exe
 /public/downloads/*.dmg
