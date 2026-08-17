@@ -3816,6 +3816,468 @@ app.whenReady().then(() => {
         }
     });
 
+    ipcMain.handle('get-admin-subscribers', async (event, adminEmail) => {
+        try {
+            const ADMIN_EMAILS = new Set(['jeetumdc@gmail.com', 'kalpadass@aiims.edu', 'admin@mediapp.store', 'support@mediapp.store']);
+            if (adminEmail && !ADMIN_EMAILS.has(String(adminEmail).toLowerCase().trim())) {
+                return { success: false, error: 'Unauthorized: Admin access required.' };
+            }
+
+            const https = require('https');
+            const fs = require('fs');
+            const path = require('path');
+
+            const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || 'rzp_live_SiXmXO4YoPaPyF';
+            const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || 'v8Z3T2qXFdz5iXZ2M0oc6jgR';
+
+            function rzpFetch(endpoint) {
+                return new Promise((resolve) => {
+                    if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+                        resolve({ error: 'Razorpay keys not configured' });
+                        return;
+                    }
+                    const credentials = Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+                    const req = https.get(`https://api.razorpay.com/v1/${endpoint}`, {
+                        headers: { Authorization: `Basic ${credentials}` }
+                    }, (res) => {
+                        let data = '';
+                        res.on('data', chunk => data += chunk);
+                        res.on('end', () => {
+                            try { resolve(JSON.parse(data)); } catch (e) { resolve({ error: e.message }); }
+                        });
+                    });
+                    req.on('error', err => resolve({ error: err.message }));
+                    req.setTimeout(15000, () => { req.destroy(); resolve({ error: 'Timeout' }); });
+                });
+            }
+
+            const now = new Date();
+            const userMap = new Map();
+
+            function getOrCreateUser(key, email, phone, hwid) {
+                let existingKey = key;
+                if (email && userMap.has(email.toLowerCase())) {
+                    existingKey = email.toLowerCase();
+                } else if (hwid && hwid !== 'N/A' && userMap.has(`hwid_${hwid}`)) {
+                    existingKey = `hwid_${hwid}`;
+                } else if (phone && phone !== 'N/A' && userMap.has(`phone_${phone}`)) {
+                    existingKey = `phone_${phone}`;
+                }
+
+                if (!userMap.has(existingKey)) {
+                    userMap.set(existingKey, {
+                        primaryKey: existingKey,
+                        email: email ? email.toLowerCase() : null,
+                        phone: phone || null,
+                        hwid: hwid || null,
+                        displayName: email || phone || (hwid ? `Device [${hwid}]` : 'Subscriber'),
+                        payments: [],
+                    });
+                }
+                const u = userMap.get(existingKey);
+                if (email && !u.email) u.email = email.toLowerCase();
+                if (phone && !u.phone && phone !== 'N/A') u.phone = phone;
+                if (hwid && !u.hwid && hwid !== 'N/A') u.hwid = hwid;
+                if (u.displayName === 'Subscriber' && (u.email || u.phone)) {
+                    u.displayName = u.email || u.phone || u.displayName;
+                }
+                return u;
+            }
+
+            function detectCountry(info) {
+                const ISO_MAP = {
+                    IN: { name: 'India', flag: '🇮🇳' },
+                    US: { name: 'United States', flag: '🇺🇸' },
+                    GB: { name: 'United Kingdom', flag: '🇬🇧' },
+                    CA: { name: 'Canada', flag: '🇨🇦' },
+                    AU: { name: 'Australia', flag: '🇦🇺' },
+                    DE: { name: 'Germany', flag: '🇩🇪' },
+                    FR: { name: 'France', flag: '🇫🇷' },
+                    AE: { name: 'UAE', flag: '🇦🇪' },
+                    SA: { name: 'Saudi Arabia', flag: '🇸🇦' },
+                    SG: { name: 'Singapore', flag: '🇸🇬' },
+                    NZ: { name: 'New Zealand', flag: '🇳🇿' },
+                    MY: { name: 'Malaysia', flag: '🇲🇾' },
+                    PH: { name: 'Philippines', flag: '🇵🇭' },
+                    ZA: { name: 'South Africa', flag: '🇿🇦' },
+                    IE: { name: 'Ireland', flag: '🇮🇪' },
+                    ES: { name: 'Spain', flag: '🇪🇸' },
+                    IT: { name: 'Italy', flag: '🇮🇹' },
+                    NL: { name: 'Netherlands', flag: '🇳🇱' },
+                };
+
+                if (info.cardCountry && ISO_MAP[info.cardCountry.toUpperCase()]) {
+                    const found = ISO_MAP[info.cardCountry.toUpperCase()];
+                    return { name: found.name, code: info.cardCountry.toUpperCase(), flag: found.flag };
+                }
+
+                const phone = (info.phone || '').replace(/[\s\-\(\)]/g, '');
+                if (phone.startsWith('+91') || (phone.startsWith('91') && phone.length >= 12)) {
+                    return { name: 'India', code: 'IN', flag: '🇮🇳' };
+                }
+                if (phone.startsWith('+1') || (phone.startsWith('1') && phone.length === 11)) {
+                    return { name: 'United States', code: 'US', flag: '🇺🇸' };
+                }
+                if (phone.startsWith('+44')) {
+                    return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
+                }
+                if (phone.startsWith('+61')) {
+                    return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
+                }
+                if (phone.startsWith('+971')) {
+                    return { name: 'UAE', code: 'AE', flag: '🇦🇪' };
+                }
+                if (phone.startsWith('+966')) {
+                    return { name: 'Saudi Arabia', code: 'SA', flag: '🇸🇦' };
+                }
+                if (phone.startsWith('+65')) {
+                    return { name: 'Singapore', code: 'SG', flag: '🇸🇬' };
+                }
+                if (phone.startsWith('+49')) {
+                    return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
+                }
+                if (phone.startsWith('+33')) {
+                    return { name: 'France', code: 'FR', flag: '🇫🇷' };
+                }
+
+                const curr = (info.currency || '').toUpperCase();
+                if (curr === 'INR') return { name: 'India', code: 'IN', flag: '🇮🇳' };
+                if (curr === 'USD') return { name: 'United States', code: 'US', flag: '🇺🇸' };
+                if (curr === 'GBP') return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
+                if (curr === 'EUR') return { name: 'Europe', code: 'EU', flag: '🇪🇺' };
+                if (curr === 'AUD') return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
+                if (curr === 'CAD') return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
+
+                const email = (info.email || '').toLowerCase();
+                if (email.endsWith('.in') || email.endsWith('.edu.in') || email.endsWith('.co.in') || email.endsWith('.gov.in') || email.includes('aiims.edu')) {
+                    return { name: 'India', code: 'IN', flag: '🇮🇳' };
+                }
+                if (email.endsWith('.uk') || email.endsWith('.co.uk') || email.endsWith('.nhs.uk')) {
+                    return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
+                }
+                if (email.endsWith('.au') || email.endsWith('.com.au')) {
+                    return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
+                }
+                if (email.endsWith('.ca')) return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
+                if (email.endsWith('.de')) return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
+
+                return { name: 'India', code: 'IN', flag: '🇮🇳' };
+            }
+
+            // 1. Razorpay
+            try {
+                const rzpRes = await rzpFetch('payments?count=100');
+                if (rzpRes && rzpRes.items && Array.isArray(rzpRes.items)) {
+                    for (const p of rzpRes.items) {
+                        const email = p.email ? p.email.toLowerCase().trim() : null;
+                        const phone = p.contact && p.contact !== 'null' ? p.contact : null;
+                        const notes = p.notes || {};
+                        const hwid = notes.activation_id || notes.hwid || null;
+                        const mainKey = email || (hwid ? `hwid_${hwid}` : (phone ? `phone_${phone}` : p.id));
+                        const userObj = getOrCreateUser(mainKey, email, phone, hwid);
+                        userObj.payments.push(p);
+                    }
+                }
+            } catch (e) {
+                console.warn('[IPC get-admin-subscribers] Razorpay error:', e);
+            }
+
+            // 2. Firestore & Auth
+            try {
+                const admin = require('firebase-admin');
+                let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+                if (!serviceAccountPath) {
+                    const rootDir = path.join(__dirname, '..');
+                    const files = fs.readdirSync(rootDir);
+                    const keyFile = files.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
+                    if (keyFile) {
+                        serviceAccountPath = path.join(rootDir, keyFile);
+                    }
+                }
+
+                if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
+                    if (!admin.apps.length) {
+                        admin.initializeApp({
+                            credential: admin.credential.cert(require(path.resolve(serviceAccountPath))),
+                        });
+                    }
+                    const db = admin.firestore();
+                    db.settings({ preferRest: true });
+                    const snap = await db.collection('users').get();
+                    snap.forEach(docSnap => {
+                        const data = docSnap.data() || {};
+                        const email = data.email || data.userEmail || (docSnap.id.includes('@') ? docSnap.id : null);
+                        const hwid = data.licenseDetails?.hwid || null;
+                        const phone = data.contact || null;
+                        const mainKey = email ? email.toLowerCase() : (hwid ? `hwid_${hwid}` : docSnap.id);
+                        const userObj = getOrCreateUser(mainKey, email, phone, hwid);
+                        userObj.firestoreDoc = { id: docSnap.id, ...data };
+                    });
+
+                    try {
+                        const auth = admin.auth();
+                        const authList = await auth.listUsers(200);
+                        authList.users.forEach(u => {
+                            if (u.email) {
+                                const email = u.email.toLowerCase();
+                                const userObj = getOrCreateUser(email, email, u.phoneNumber || null, null);
+                                userObj.authDoc = {
+                                    uid: u.uid,
+                                    email: u.email,
+                                    creationTime: u.metadata.creationTime,
+                                };
+                            }
+                        });
+                    } catch(authE) {}
+                }
+            } catch (e) {
+                console.warn('[IPC get-admin-subscribers] Firebase error:', e);
+            }
+
+            // Transform
+            const records = [];
+            let totalRevenueINR = 0;
+
+            userMap.forEach(user => {
+                const history = [];
+                let lifetimePaidINR = 0;
+                user.payments.sort((a, b) => b.created_at - a.created_at);
+
+                for (const p of user.payments) {
+                    const amount = p.amount ? p.amount / 100 : 0;
+                    const currency = p.currency || 'INR';
+                    const status = p.status;
+                    const createdAt = new Date(p.created_at * 1000);
+                    const notes = p.notes || {};
+                    const hwid = notes.activation_id || notes.hwid || undefined;
+                    const plan = notes.billing || notes.plan_id || (amount >= 1000 ? 'yearly' : 'monthly');
+
+                    if (status === 'captured') {
+                        const inrAmount = currency === 'INR' ? amount : amount * 85;
+                        lifetimePaidINR += inrAmount;
+                        totalRevenueINR += inrAmount;
+                    }
+
+                    history.push({
+                        id: p.id,
+                        paymentId: p.id,
+                        amount: amount,
+                        currency: currency,
+                        status: status,
+                        date: createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                        rawDate: createdAt.toISOString(),
+                        billing: plan,
+                        hwid: hwid,
+                        notes: notes,
+                        source: 'Razorpay',
+                    });
+                }
+
+                let currentPlan = 'free';
+                let computedStatus = 'Inactive / Free';
+                let isActive = false;
+                let startDate = 'N/A';
+                let expiresAt = 'N/A';
+                let rawExpiresAt = null;
+                let rawStartDate = null;
+                let daysRemaining = null;
+                let currentAmount = 0;
+                let currency = 'INR';
+
+                const latestCaptured = user.payments.find(p => p.status === 'captured');
+                const latestRefunded = user.payments.find(p => p.status === 'refunded');
+
+                if (latestCaptured) {
+                    const p = latestCaptured;
+                    currentAmount = p.amount ? p.amount / 100 : 0;
+                    currency = p.currency || 'INR';
+                    const createdAt = new Date(p.created_at * 1000);
+                    rawStartDate = createdAt.toISOString();
+                    startDate = createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                    const notes = p.notes || {};
+                    const billing = notes.billing || notes.plan_id || (currentAmount >= 1000 ? 'yearly' : 'monthly');
+                    currentPlan = billing.includes('year') ? 'yearly' : 'monthly';
+
+                    const expDate = new Date(createdAt);
+                    if (currentPlan === 'yearly') {
+                        expDate.setFullYear(expDate.getFullYear() + 1);
+                    } else {
+                        expDate.setMonth(expDate.getMonth() + 1);
+                    }
+
+                    rawExpiresAt = expDate.toISOString();
+                    expiresAt = expDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                    const diffMs = expDate.getTime() - now.getTime();
+                    daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+                    if (diffMs > 0) {
+                        isActive = true;
+                        computedStatus = currentPlan === 'yearly' ? 'Active Pro (Yearly)' : 'Active Pro (Monthly)';
+                    } else {
+                        isActive = false;
+                        computedStatus = 'Expired';
+                    }
+                } else if (user.firestoreDoc && user.firestoreDoc.isActivated) {
+                    const fsData = user.firestoreDoc;
+                    const license = fsData.licenseDetails || {};
+                    const billing = license.billing || 'custom';
+                    currentPlan = billing === 'yearly' ? 'yearly' : billing === 'monthly' ? 'monthly' : 'lifetime';
+
+                    if (license.expiresAt) {
+                        rawExpiresAt = license.expiresAt;
+                        const expDate = new Date(license.expiresAt);
+                        expiresAt = expDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                        const diffMs = expDate.getTime() - now.getTime();
+                        daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                        if (diffMs > 0) {
+                            isActive = true;
+                            computedStatus = currentPlan === 'yearly' ? 'Active Pro (Yearly)' : 'Active Pro (Monthly)';
+                        } else {
+                            computedStatus = 'Expired';
+                        }
+                    } else {
+                        isActive = true;
+                        computedStatus = 'Active Pro (Lifetime)';
+                        expiresAt = 'Lifetime (No Expiry)';
+                    }
+
+                    if (fsData.createdAt) {
+                        rawStartDate = fsData.createdAt;
+                        startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    }
+                } else if (latestRefunded) {
+                    computedStatus = 'Refunded';
+                    const createdAt = new Date(latestRefunded.created_at * 1000);
+                    startDate = createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    currentAmount = latestRefunded.amount ? latestRefunded.amount / 100 : 0;
+                } else if (user.authDoc) {
+                    const createdAt = new Date(user.authDoc.creationTime);
+                    startDate = createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    rawStartDate = user.authDoc.creationTime;
+                }
+
+                let validityText = 'N/A';
+                if (isActive && daysRemaining !== null) {
+                    validityText = `${daysRemaining} days remaining`;
+                } else if (!isActive && daysRemaining !== null) {
+                    validityText = `Expired ${Math.abs(daysRemaining)} days ago`;
+                } else if (isActive && currentPlan === 'lifetime') {
+                    validityText = 'Lifetime Active';
+                }
+
+                const displayName = user.email || user.phone || (user.hwid ? `Device [${user.hwid}]` : user.primaryKey);
+
+                records.push({
+                    userId: user.primaryKey,
+                    displayName: displayName,
+                    email: user.email,
+                    phone: user.phone,
+                    hwid: user.hwid,
+                    country: detectCountry({ phone: user.phone, email: user.email, currency: currency }),
+                    currentPlan: currentPlan,
+                    status: computedStatus,
+                    isActive: isActive,
+                    startDate: startDate,
+                    expiresAt: expiresAt,
+                    rawExpiresAt: rawExpiresAt,
+                    rawStartDate: rawStartDate,
+                    daysRemaining: daysRemaining,
+                    validityText: validityText,
+                    currentAmount: currentAmount,
+                    currentAmountFormatted: `₹${currentAmount.toLocaleString('en-IN')}`,
+                    totalAmountSubscribed: lifetimePaidINR,
+                    totalAmountSubscribedFormatted: `₹${lifetimePaidINR.toLocaleString('en-IN')}`,
+                    currency: currency,
+                    source: user.payments.length > 0 ? (user.firestoreDoc ? 'Razorpay + Firestore' : 'Razorpay Live') : (user.firestoreDoc ? 'Firestore' : 'Firebase Auth'),
+                    history: history,
+                });
+            });
+
+            records.sort((a, b) => {
+                if (a.isActive && !b.isActive) return -1;
+                if (!a.isActive && b.isActive) return 1;
+                if (b.totalAmountSubscribed !== a.totalAmountSubscribed) {
+                    return b.totalAmountSubscribed - a.totalAmountSubscribed;
+                }
+                return (b.rawStartDate || '').localeCompare(a.rawStartDate || '');
+            });
+
+            const activeProCount = records.filter(r => r.isActive).length;
+            const expiredCount = records.filter(r => r.status === 'Expired').length;
+            const refundedCount = records.filter(r => r.status === 'Refunded').length;
+            const freeCount = records.filter(r => r.status === 'Inactive / Free').length;
+
+            return {
+                success: true,
+                subscribers: records,
+                summary: {
+                    totalUsers: records.length,
+                    activePro: activeProCount,
+                    expired: expiredCount,
+                    refunded: refundedCount,
+                    free: freeCount,
+                    totalRevenueINR: totalRevenueINR,
+                },
+            };
+        } catch (err) {
+            console.error('[IPC get-admin-subscribers] Error:', err);
+            return { success: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('sync-admin-subscriber', async (event, subscriberData) => {
+        try {
+            const admin = require('firebase-admin');
+            let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+            if (!serviceAccountPath) {
+                const rootDir = path.join(__dirname, '..');
+                const files = fs.readdirSync(rootDir);
+                const keyFile = files.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
+                if (keyFile) {
+                    serviceAccountPath = path.join(rootDir, keyFile);
+                }
+            }
+
+            if (!serviceAccountPath || !fs.existsSync(serviceAccountPath)) {
+                return { success: false, error: 'Firebase credentials not found.' };
+            }
+
+            if (!admin.apps.length) {
+                admin.initializeApp({
+                    credential: admin.credential.cert(require(path.resolve(serviceAccountPath))),
+                });
+            }
+
+            const db = admin.firestore();
+            db.settings({ preferRest: true });
+
+            const docId = subscriberData.email || subscriberData.hwid || subscriberData.userId;
+            const docRef = db.collection('users').doc(docId.toLowerCase());
+
+            await docRef.set({
+                email: subscriberData.email ? subscriberData.email.toLowerCase() : null,
+                contact: subscriberData.phone || null,
+                isActivated: !!subscriberData.isActive,
+                licenseDetails: {
+                    billing: subscriberData.currentPlan || 'monthly',
+                    expiresAt: subscriberData.rawExpiresAt || null,
+                    date: subscriberData.rawStartDate || new Date().toISOString(),
+                    hwid: subscriberData.hwid || null,
+                    payment_id: subscriberData.history?.[0]?.paymentId || null,
+                    syncedFromAdminDashboard: true,
+                },
+                lastSyncedAt: new Date().toISOString(),
+            }, { merge: true });
+
+            return { success: true };
+        } catch (err) {
+            console.error('[IPC sync-admin-subscriber] Error:', err);
+            return { success: false, error: err.message };
+        }
+    });
+
     ipcMain.handle('get-dictionary', () => userDictionary);
     ipcMain.handle('add-word', (event, input) => {
         if (typeof input !== 'string') return { success: false, error: 'Invalid input' };

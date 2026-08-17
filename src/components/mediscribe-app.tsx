@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
-import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info } from "lucide-react";
+import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info, ShieldCheck } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
@@ -21,8 +21,9 @@ const DictionaryManager = dynamic(() => import("./dictionary-manager").then((mod
 const InstructionsView = dynamic(() => import("./instructions-view").then((mod) => mod.InstructionsView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading instructions…</div> });
 const PricingView = dynamic(() => import("./pricing-view").then((mod) => mod.PricingView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading pricing…</div> });
 const TemplateView = dynamic(() => import("./template-view").then((mod) => mod.TemplateView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading report templates…</div> });
+const AdminSubscribersView = dynamic(() => import("./admin-subscribers-view").then((mod) => mod.AdminSubscribersView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading subscriber intelligence…</div> });
 
-type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'instructions' | 'pricing' | 'templates';
+type AppView = 'landing' | 'dictation' | 'keyword' | 'dictionary' | 'instructions' | 'pricing' | 'templates' | 'admin-subscribers';
 
 export function MediScribeApp() {
   const { theme, setTheme } = useTheme();
@@ -52,6 +53,10 @@ export function MediScribeApp() {
   // Whitelisted accounts that bypass subscription (admin + MS Store reviewer accounts only)
   const WHITELISTED_EMAILS = ['jeetumdc@gmail.com', 'test@mediapp.store', 'reviewer@mediapp.store'];
   const isLifetimeFree = currentUser !== null && WHITELISTED_EMAILS.includes(currentUser.toLowerCase().trim());
+
+  // Authorized Admin emails
+  const ADMIN_EMAILS = ['jeetumdc@gmail.com', 'kalpadass@aiims.edu', 'admin@mediapp.store', 'support@mediapp.store'];
+  const isAdminUser = currentUser !== null && ADMIN_EMAILS.includes(currentUser.toLowerCase().trim());
 
   useEffect(() => {
     if (isElectron) {
@@ -590,6 +595,19 @@ export function MediScribeApp() {
                       )}
                     </div>
 
+                    {isAdminUser && (
+                      <Button
+                        onClick={() => {
+                          setCurrentView('admin-subscribers');
+                        }}
+                        variant="outline"
+                        className="w-full h-8 text-xs font-bold border-violet-200 dark:border-violet-800/60 bg-violet-50/50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 rounded-lg shadow-sm flex items-center justify-center gap-1.5"
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
+                        Subscriber & Revenue Admin
+                      </Button>
+                    )}
+
                     {isElectron && (
                       <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                         <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Application Update</div>
@@ -695,6 +713,21 @@ export function MediScribeApp() {
             >
               <LayoutTemplate className="h-3.5 w-3.5" />
             </Button>
+
+            {isAdminUser && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCurrentView(currentView === 'admin-subscribers' ? 'landing' : 'admin-subscribers')}
+                className={cn(
+                  "h-7 w-7 rounded-full transition-colors",
+                  currentView === 'admin-subscribers' ? "text-violet-600 bg-violet-50 dark:bg-blue-900/30 ring-1 ring-violet-400" : "text-slate-500 hover:text-violet-600"
+                )}
+                title="Admin Subscriber & Revenue Intelligence"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </Button>
+            )}
 
             <Button
               variant="ghost"
@@ -811,6 +844,13 @@ export function MediScribeApp() {
               onAutoStartHandled={() => setAutoStartView(null)}
             />
           </div>
+        )}
+
+        {currentView === 'admin-subscribers' && (
+          <AdminSubscribersView
+            onBack={() => setCurrentView('landing')}
+            currentUser={currentUser}
+          />
         )}
       </main>
 
