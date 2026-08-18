@@ -340,7 +340,7 @@ export function MediScribeApp() {
     };
   }, [isMounted, isElectron, currentUser, currentUserUid, isLifetimeFree]);
 
-  // Track app launch / session and sync active user status to PostHog & Supabase
+  // Track app launch / session
   useEffect(() => {
     if (!isMounted || isActivated === null) return;
 

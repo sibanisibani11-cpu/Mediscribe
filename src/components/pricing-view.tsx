@@ -105,7 +105,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
       });
 
       if (result?.success) {
-        // Track Pro activation in PostHog and Supabase
+        // Log Pro activation event
         trackProActivation({
           hwid: activationId || null,
           email: currentUser || auth?.currentUser?.email || null,
@@ -322,7 +322,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
                             }
                         }
 
-                        // Track Pro activation in PostHog & Supabase
+                        // Log Pro activation event
                         trackProActivation({
                             hwid: activationId || null,
                             email: currentUser || auth?.currentUser?.email || null,

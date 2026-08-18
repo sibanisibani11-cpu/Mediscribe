@@ -46,7 +46,6 @@
     "google-auth-library": "^10.5.0",
     "googleapis": "^169.0.0",
     "nspell": "^2.1.5",
-    "posthog-js": "^1.417.0",
     "uiohook-napi": "^1.5.4"
   },
   "devDependencies": {
@@ -304,6 +303,5 @@
         }
       ]
     }
-
   }
 }
