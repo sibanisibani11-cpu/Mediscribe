@@ -23,9 +23,10 @@ export interface AdminSubscriberRecord {
     code: string;
     flag: string;
   };
-  currentPlan: 'monthly' | 'yearly' | 'lifetime' | 'free';
-  status: 'Active Pro (Yearly)' | 'Active Pro (Monthly)' | 'Active Pro (Lifetime)' | 'Expired' | 'Refunded' | 'Inactive / Free';
+  currentPlan: 'monthly' | 'yearly' | 'lifetime' | 'trial' | 'free';
+  status: 'Active Pro (Yearly)' | 'Active Pro (Monthly)' | 'Active Pro (Lifetime)' | 'Free Trial (Active)' | 'Free Trial (Expired)' | 'Expired' | 'Refunded' | 'Inactive / Free';
   isActive: boolean;
+  isTrial?: boolean;
   startDate: string;
   expiresAt: string;
   rawExpiresAt: string | null;
@@ -47,6 +48,7 @@ export interface AdminSubscribersResponse {
   summary: {
     totalUsers: number;
     activePro: number;
+    trial: number;
     expired: number;
     refunded: number;
     free: number;

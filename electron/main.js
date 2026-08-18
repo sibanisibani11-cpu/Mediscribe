@@ -4147,6 +4147,32 @@ app.whenReady().then(() => {
                         rawStartDate = fsData.createdAt;
                         startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }
+                } else if (user.firestoreDoc && (user.firestoreDoc.trialExpiresAt || (!user.firestoreDoc.isActivated && user.firestoreDoc.createdAt))) {
+                    const fsData = user.firestoreDoc;
+                    const trialExp = fsData.trialExpiresAt || (fsData.createdAt ? new Date(new Date(fsData.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
+                    let isTrial = false;
+                    if (trialExp) {
+                        rawExpiresAt = trialExp;
+                        const expDate = new Date(trialExp);
+                        expiresAt = expDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                        const diffMs = expDate.getTime() - now.getTime();
+                        daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                        if (diffMs > 0) {
+                            isActive = true;
+                            isTrial = true;
+                            currentPlan = 'trial';
+                            computedStatus = 'Free Trial (Active)';
+                        } else {
+                            isActive = false;
+                            currentPlan = 'trial';
+                            computedStatus = 'Free Trial (Expired)';
+                        }
+                    }
+
+                    if (fsData.createdAt) {
+                        rawStartDate = fsData.createdAt;
+                        startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    }
                 } else if (latestRefunded) {
                     computedStatus = 'Refunded';
                     const createdAt = new Date(latestRefunded.created_at * 1000);
@@ -4179,6 +4205,7 @@ app.whenReady().then(() => {
                     currentPlan: currentPlan,
                     status: computedStatus,
                     isActive: isActive,
+                    isTrial: currentPlan === 'trial',
                     startDate: startDate,
                     expiresAt: expiresAt,
                     rawExpiresAt: rawExpiresAt,
@@ -4204,8 +4231,9 @@ app.whenReady().then(() => {
                 return (b.rawStartDate || '').localeCompare(a.rawStartDate || '');
             });
 
-            const activeProCount = records.filter(r => r.isActive).length;
-            const expiredCount = records.filter(r => r.status === 'Expired').length;
+            const activeProCount = records.filter(r => r.isActive && r.currentPlan !== 'trial').length;
+            const trialCount = records.filter(r => r.currentPlan === 'trial' && r.isActive).length;
+            const expiredCount = records.filter(r => r.status === 'Expired' || r.status === 'Free Trial (Expired)').length;
             const refundedCount = records.filter(r => r.status === 'Refunded').length;
             const freeCount = records.filter(r => r.status === 'Inactive / Free').length;
 
@@ -4215,6 +4243,7 @@ app.whenReady().then(() => {
                 summary: {
                     totalUsers: records.length,
                     activePro: activeProCount,
+                    trial: trialCount,
                     expired: expiredCount,
                     refunded: refundedCount,
                     free: freeCount,

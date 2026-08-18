@@ -34,13 +34,14 @@ interface AdminSubscribersViewProps {
   currentUser?: string | null;
 }
 
-type FilterTab = 'all' | 'active' | 'expired' | 'refunded' | 'free';
+type FilterTab = 'all' | 'active' | 'trial' | 'expired' | 'refunded' | 'free';
 
 export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersViewProps) {
   const [subscribers, setSubscribers] = useState<AdminSubscriberRecord[]>([]);
   const [summary, setSummary] = useState<{
     totalUsers: number;
     activePro: number;
+    trial: number;
     expired: number;
     refunded: number;
     free: number;
@@ -48,6 +49,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
   }>({
     totalUsers: 0,
     activePro: 0,
+    trial: 0,
     expired: 0,
     refunded: 0,
     free: 0,
@@ -116,8 +118,9 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
   const filteredSubscribers = useMemo(() => {
     return subscribers.filter((sub) => {
       // Tab filter
-      if (activeTab === 'active' && !sub.isActive) return false;
-      if (activeTab === 'expired' && sub.status !== 'Expired') return false;
+      if (activeTab === 'active' && (!sub.isActive || sub.isTrial)) return false;
+      if (activeTab === 'trial' && !sub.isTrial) return false;
+      if (activeTab === 'expired' && sub.status !== 'Expired' && sub.status !== 'Free Trial (Expired)') return false;
       if (activeTab === 'refunded' && sub.status !== 'Refunded') return false;
       if (activeTab === 'free' && sub.status !== 'Inactive / Free') return false;
 
@@ -363,6 +366,25 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
           </div>
         </div>
 
+        {/* Card 3: Free Trial Active */}
+        <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-violet-950/40 dark:via-violet-950/20 dark:to-transparent border border-violet-200/60 dark:border-violet-800/40 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-violet-400">
+              7-Day Free Trials
+            </span>
+            <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+              <Sparkles className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-900 dark:text-white">{summary.trial || 0}</span>
+            <span className="text-[11px] font-bold text-violet-600 dark:text-violet-400">Trial Active</span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1">
+            Potential Pro conversion pipeline
+          </div>
+        </div>
+
         {/* Card 4: Total Tracked Users */}
         <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent dark:from-blue-950/40 dark:via-blue-950/20 dark:to-transparent border border-blue-200/60 dark:border-blue-800/40 shadow-sm">
           <div className="flex items-center justify-between">
@@ -409,6 +431,18 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             Active Pro ({summary.activePro})
+          </button>
+          <button
+            onClick={() => setActiveTab('trial')}
+            className={cn(
+              'px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5',
+              activeTab === 'trial'
+                ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/20'
+                : 'text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30'
+            )}
+          >
+            <Sparkles className="h-3 w-3" />
+            Free Trials ({summary.trial || 0})
           </button>
           <button
             onClick={() => setActiveTab('expired')}
@@ -571,6 +605,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
                               <Sparkles className="h-3 w-3 text-purple-600 dark:text-purple-400" />
                               Lifetime Pro
+                            </span>
+                          ) : sub.currentPlan === 'trial' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
+                              <Sparkles className="h-3 w-3 text-violet-600 dark:text-violet-400" />
+                              7-Day Free Trial
                             </span>
                           ) : (
                             <span className="px-2 py-0.5 rounded text-[11px] font-semibold text-slate-500 bg-slate-100 dark:bg-slate-800">

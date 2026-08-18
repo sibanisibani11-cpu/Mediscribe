@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
-import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info, ShieldCheck } from "lucide-react";
+import { Moon, Sun, LogOut, User, Book, Home, ArrowLeft, Maximize2, Minimize2, Crown, LayoutTemplate, Sparkles, Info, ShieldCheck, AlertCircle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Button } from "./ui/button";
@@ -34,6 +34,7 @@ export function MediScribeApp() {
   const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [isActivated, setIsActivated] = useState<boolean | null>(null);
+  const [trialExpiresAt, setTrialExpiresAt] = useState<string | null>(null);
   const [licenseDetails, setLicenseDetails] = useState<any>(null);
   const [showPricingFromExpiration, setShowPricingFromExpiration] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -252,6 +253,16 @@ export function MediScribeApp() {
             const active = !!(data && data.isActivated && notExpired);
             setIsActivated(active);
 
+            // 7-Day Free Trial handling
+            if (data && data.trialExpiresAt) {
+              setTrialExpiresAt(data.trialExpiresAt);
+            } else if (data && !data.isActivated && data.createdAt) {
+              const calcExpires = new Date(new Date(data.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+              setTrialExpiresAt(calcExpires);
+            } else {
+              setTrialExpiresAt(null);
+            }
+
             if (data && data.licenseDetails) {
               setLicenseDetails(data.licenseDetails);
             } else {
@@ -427,8 +438,16 @@ export function MediScribeApp() {
     }} />;
   }
 
-  // Show Pricing View even if expired or for subscription requirement
-  if (!isActivated && !isLifetimeFree) {
+  // 7-Day Free Trial evaluation
+  const isTrialActive = !isActivated && !isLifetimeFree && !!trialExpiresAt && new Date(trialExpiresAt) > new Date();
+  const trialDaysRemaining = isTrialActive
+    ? Math.max(1, Math.ceil((new Date(trialExpiresAt!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0;
+  const isTrialExpired = !isActivated && !isLifetimeFree && !!trialExpiresAt && new Date(trialExpiresAt) <= new Date();
+  const hasAccess = isActivated || isLifetimeFree || isTrialActive;
+
+  // Show Pricing View if no access (or trial expired)
+  if (!hasAccess) {
     const isSubscriptionExpired = !!licenseDetails?.expiresAt && new Date() > new Date(licenseDetails.expiresAt);
 
     if (isSubscriptionExpired && !showPricingFromExpiration) {
@@ -475,14 +494,54 @@ export function MediScribeApp() {
       );
     }
 
+    if (isTrialExpired && !showPricingFromExpiration) {
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 font-sans">
+          <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-violet-500/30 rounded-3xl shadow-2xl overflow-hidden p-10 flex flex-col items-center text-center animate-in fade-in zoom-in duration-700">
+            <div className="w-20 h-20 bg-violet-500/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner border border-violet-500/30">
+              <Sparkles className="h-10 w-10 text-violet-400" />
+            </div>
+            <div className="px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/30 mb-4">
+              <span className="text-violet-300 text-[10px] font-black uppercase tracking-widest">7-Day Trial Complete</span>
+            </div>
+            <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase italic">Free Trial Ended</h1>
+            <p className="text-slate-300 text-sm leading-relaxed mb-4 px-4">
+              We hope you enjoyed full Pro AI dictation! Subscribe now to continue recording and creating smart clinical notes.
+            </p>
+            <p className="text-slate-500 text-xs mb-8 px-4">
+              Your custom keywords and clinical templates are safely saved and will be unlocked immediately.
+            </p>
+            <div className="flex flex-col gap-4 w-full">
+              <Button
+                onClick={() => setShowPricingFromExpiration(true)}
+                className="w-full h-14 cobalt-gradient hover:opacity-90 text-white font-black text-lg rounded-2xl transition-all shadow-xl shadow-violet-500/20 active:scale-[0.98]"
+              >
+                ✨ Upgrade to MediScribe Pro
+              </Button>
+              <Button
+                onClick={handleLogout}
+                variant="ghost"
+                className="w-full h-10 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-wider"
+              >
+                Log Out
+              </Button>
+            </div>
+            <div className="mt-8 text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+              MediScribe Pro
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
         <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
           <PricingView 
             isActivated={isActivated}
             currentUser={currentUser}
-            onBack={isSubscriptionExpired ? () => setShowPricingFromExpiration(false) : handleLogout}
-            backButtonText={isSubscriptionExpired ? "Back" : "Log Out"}
+            onBack={isSubscriptionExpired || isTrialExpired ? () => setShowPricingFromExpiration(false) : handleLogout}
+            backButtonText={isSubscriptionExpired || isTrialExpired ? "Back" : "Log Out"}
           />
         </main>
       </div>
@@ -516,13 +575,26 @@ export function MediScribeApp() {
             <div className="text-[10px] text-muted-foreground flex flex-col items-start leading-tight truncate w-full">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-violet-600 dark:text-violet-400 truncate">
-                  {isLifetimeFree ? "Lifetime License" : "Pro License"}
+                  {isLifetimeFree ? "Lifetime License" : isActivated ? "Pro License" : isTrialActive ? `7-Day Free Trial (${trialDaysRemaining}d left)` : "Free Trial"}
                 </span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            {isTrialActive && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-violet-500/15 to-indigo-500/15 border border-violet-500/30 text-xs text-violet-700 dark:text-violet-300 shadow-sm shrink-0">
+                <span className="text-xs">⏳</span>
+                <span className="font-bold text-[10px]">Trial: {trialDaysRemaining} {trialDaysRemaining === 1 ? 'day' : 'days'} left</span>
+                <Button
+                  size="sm"
+                  onClick={() => setCurrentView('pricing')}
+                  className="h-5 px-2 text-[9px] font-black uppercase tracking-wider bg-violet-600 hover:bg-violet-700 text-white rounded-full ml-1"
+                >
+                  Upgrade
+                </Button>
+              </div>
+            )}
             {updateState.status === 'downloaded' && (
               <Button
                 onClick={() => (window as any).electron?.installUpdate?.()}
@@ -573,17 +645,31 @@ export function MediScribeApp() {
                             <Crown className="h-4 w-4 text-violet-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Lifetime License</span>
                           </>
-                        ) : (
+                        ) : isActivated ? (
                           <>
                             <Crown className="h-4 w-4 text-emerald-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                               Pro Active {licenseDetails?.billing ? `(${licenseDetails.billing})` : ''}
                             </span>
                           </>
+                        ) : isTrialActive ? (
+                          <>
+                            <Sparkles className="h-4 w-4 text-violet-500" />
+                            <span className="text-xs font-bold text-violet-700 dark:text-violet-300">
+                              7-Day Free Trial ({trialDaysRemaining}d left)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="h-4 w-4 text-rose-500" />
+                            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                              Free / Inactive
+                            </span>
+                          </>
                         )}
                       </div>
                       
-                      {!isLifetimeFree && licenseDetails?.expiresAt && (
+                      {!isLifetimeFree && isActivated && licenseDetails?.expiresAt && (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                           <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
                           {new Date(licenseDetails.expiresAt).toLocaleDateString(undefined, {
@@ -592,6 +678,15 @@ export function MediScribeApp() {
                             day: 'numeric'
                           })}
                         </div>
+                      )}
+
+                      {isTrialActive && (
+                        <Button
+                          onClick={() => setCurrentView('pricing')}
+                          className="w-full h-8 mt-2 text-xs font-bold cobalt-gradient text-white rounded-lg shadow-sm"
+                        >
+                          ✨ Upgrade to Pro
+                        </Button>
                       )}
                     </div>
 

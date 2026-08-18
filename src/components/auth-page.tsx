@@ -68,6 +68,9 @@ export function AuthPage({ onLogin }: AuthPageProps) {
 
             if (isFirebaseConfigured && auth && db) {
                 let uid = "";
+                const now = new Date();
+                const trialExpires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
                 if (isLogin) {
                     // Sign In
                     const credential = await signInWithEmailAndPassword(auth, email, password);
@@ -80,8 +83,23 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                         await setDoc(userDocRef, {
                             email: email,
                             isActivated: false,
-                            createdAt: new Date().toISOString()
+                            trialStartedAt: now.toISOString(),
+                            trialExpiresAt: trialExpires.toISOString(),
+                            trialPlan: '7_day_trial',
+                            createdAt: now.toISOString()
                         });
+                    } else {
+                        const existingData = docSnap.data();
+                        // If user doesn't have trial details yet and is not activated, grant 7-day trial from createdAt or now
+                        if (!existingData.trialExpiresAt && !existingData.isActivated) {
+                            const userCreated = existingData.createdAt ? new Date(existingData.createdAt) : now;
+                            const calcExpires = new Date(userCreated.getTime() + 7 * 24 * 60 * 60 * 1000);
+                            await setDoc(userDocRef, {
+                                trialStartedAt: userCreated.toISOString(),
+                                trialExpiresAt: calcExpires.toISOString(),
+                                trialPlan: '7_day_trial',
+                            }, { merge: true });
+                        }
                     }
 
                     toast({
@@ -93,17 +111,20 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                     const credential = await createUserWithEmailAndPassword(auth, email, password);
                     uid = credential.user.uid;
 
-                    // Create user document in Firestore with isActivated: false by default using UID
+                    // Create user document in Firestore with 7-Day Free Trial by default using UID
                     const userDocRef = doc(db, "users", uid);
                     await setDoc(userDocRef, {
                         email: email,
                         isActivated: false,
-                        createdAt: new Date().toISOString()
+                        trialStartedAt: now.toISOString(),
+                        trialExpiresAt: trialExpires.toISOString(),
+                        trialPlan: '7_day_trial',
+                        createdAt: now.toISOString()
                     });
 
                     toast({
-                        title: "Account created",
-                        description: "Your account has been created successfully.",
+                        title: "🎉 Account Created!",
+                        description: "Your 7-Day Free Trial is now active with full Pro access.",
                     });
                 }
                 onLogin(email, uid);
@@ -126,8 +147,8 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                     const result = await (window as any).electron?.localSimSignup?.(email, password);
                     if (result && result.success) {
                         toast({
-                            title: "Account Created (Simulated)",
-                            description: "Your local account has been registered successfully. You can now sign in.",
+                            title: "🎉 Account Created!",
+                            description: "Your 7-Day Free Trial is now active with full Pro access.",
                         });
                         onLogin(email, email);
                     } else {
@@ -167,6 +188,9 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                     let uid = "";
                     if (isFirebaseConfigured && auth && db) {
                         try {
+                            const now = new Date();
+                            const trialExpires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
                             if (result.idToken) {
                                 const credential = GoogleAuthProvider.credential(result.idToken);
                                 const userCredential = await signInWithCredential(auth, credential);
@@ -180,8 +204,22 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                                 await setDoc(userDocRef, {
                                     email: result.user,
                                     isActivated: false,
-                                    createdAt: new Date().toISOString()
+                                    trialStartedAt: now.toISOString(),
+                                    trialExpiresAt: trialExpires.toISOString(),
+                                    trialPlan: '7_day_trial',
+                                    createdAt: now.toISOString()
                                 });
+                            } else {
+                                const existingData = userDoc.data();
+                                if (!existingData.trialExpiresAt && !existingData.isActivated) {
+                                    const userCreated = existingData.createdAt ? new Date(existingData.createdAt) : now;
+                                    const calcExpires = new Date(userCreated.getTime() + 7 * 24 * 60 * 60 * 1000);
+                                    await setDoc(userDocRef, {
+                                        trialStartedAt: userCreated.toISOString(),
+                                        trialExpiresAt: calcExpires.toISOString(),
+                                        trialPlan: '7_day_trial',
+                                    }, { merge: true });
+                                }
                             }
                         } catch (firebaseErr) {
                             console.error("Firebase Signin with Google failed:", firebaseErr);
@@ -265,6 +303,17 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                     </h1>
 
                     <div className="w-full max-w-[400px] bg-slate-950/90 dark:bg-slate-950/95 backdrop-blur-2xl border border-slate-800/70 shadow-2xl rounded-3xl overflow-hidden z-10 transition-all duration-300 animate-slide-up my-auto">
+                        {/* 7-Day Free Trial Callout */}
+                        <div className="bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 p-3 text-center text-white border-b border-violet-400/20">
+                            <div className="flex items-center justify-center gap-1.5 text-xs font-black tracking-wide">
+                                <span>✨</span>
+                                <span>Includes 7-Day Free Trial</span>
+                            </div>
+                            <div className="text-[10px] text-violet-100/90 font-medium">
+                                Full Pro AI transcription • No credit card required
+                            </div>
+                        </div>
+
                         <div className="p-6 md:p-8">
                             <form onSubmit={handleAuth} className="space-y-4">
                                 <div className="space-y-2">
