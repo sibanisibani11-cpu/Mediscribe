@@ -24,7 +24,7 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 
       # NEXT_PUBLIC_* vars are inlined at build time by Next.js — they MUST be present
       # here as env vars. Writing them to .env later does NOT affect the frontend bundle.
