@@ -141,9 +141,55 @@ function setupAutoUpdater(win) {
     // Check for updates 5 seconds after launch (silent background check)
     setTimeout(() => {
         autoUpdater.checkForUpdates().catch((err) => {
-            console.warn('[Updater] checkForUpdates failed:', err.message);
+            // electron-updater failed (e.g. unsigned build) — fall back to GitHub API
+            console.warn('[Updater] autoUpdater failed, falling back to GitHub API:', err.message);
+            checkForUpdatesViaGitHub(win);
         });
     }, 5000);
+}
+
+// Always do a GitHub API check on startup (belt-and-suspenders, catches all platforms)
+function setupGitHubUpdateCheck(win) {
+    setTimeout(() => checkForUpdatesViaGitHub(win), 6000);
+}
+
+// GitHub releases API update check — works on all platforms, no signing required
+function checkForUpdatesViaGitHub(win) {
+    const https = require('https');
+    const currentVersion = app.getVersion();
+    const options = {
+        hostname: 'api.github.com',
+        path: '/repos/sibanisibani11-cpu/Mediscribe/releases/latest',
+        headers: { 'User-Agent': 'MediScribe-App' },
+    };
+    https.get(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+            try {
+                const release = JSON.parse(data);
+                const latestVersion = (release.tag_name || '').replace(/^v/, '');
+                if (!latestVersion) return;
+                // Compare semver: only notify if latest > current
+                const newer = latestVersion.localeCompare(currentVersion, undefined, { numeric: true, sensitivity: 'base' }) > 0;
+                if (newer && win && !win.isDestroyed()) {
+                    console.log(`[Updater] GitHub update available: v${latestVersion} (current: v${currentVersion})`);
+                    win.webContents.send('update-status', {
+                        status: 'update-available-gh',
+                        version: latestVersion,
+                        downloadUrl: `https://github.com/sibanisibani11-cpu/Mediscribe/releases/tag/v${latestVersion}`,
+                        releaseNotes: release.body || '',
+                    });
+                } else if (win && !win.isDestroyed()) {
+                    win.webContents.send('update-status', { status: 'up-to-date' });
+                }
+            } catch (e) {
+                console.warn('[Updater] GitHub release parse error:', e.message);
+            }
+        });
+    }).on('error', (err) => {
+        console.warn('[Updater] GitHub release check failed:', err.message);
+    });
 }
 
 ipcMain.handle('check-for-updates', () => {
@@ -4594,6 +4640,7 @@ app.whenReady().then(() => {
     createTray();
     startWhisperServer();
     setupAutoUpdater(mainWindow);  // ← start background update checks
+    setupGitHubUpdateCheck(mainWindow); // ← GitHub API fallback (works on all platforms)
 
     // Request accessibility permissions on macOS (QUIET CHECK - NOT TRIGGERING POPUP)
     if (process.platform === 'darwin') {

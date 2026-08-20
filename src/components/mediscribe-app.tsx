@@ -41,10 +41,11 @@ export function MediScribeApp() {
   const [autoStartView, setAutoStartView] = useState<'keyword' | 'templates' | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [updateState, setUpdateState] = useState<{
-    status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error';
+    status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'up-to-date' | 'error' | 'update-available-gh';
     version?: string;
     percent?: number;
     message?: string;
+    downloadUrl?: string;
   }>({ status: 'idle' });
 
   const { toast } = useToast();
@@ -67,6 +68,12 @@ export function MediScribeApp() {
           toast({
             title: "Update Ready!",
             description: `Version ${data.version} has been downloaded. Click 'Update Now' in the header to apply.`,
+          });
+        }
+        if (data.status === 'update-available-gh') {
+          toast({
+            title: `🚀 MediScribe ${data.version} is available!`,
+            description: "New features and bug fixes are ready. Click the update banner to download.",
           });
         }
       });
@@ -566,6 +573,36 @@ export function MediScribeApp() {
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
+
+      {/* ── Persistent Update Banner ─────────────────────────────────────── */}
+      {(updateState.status === 'update-available-gh' || updateState.status === 'downloaded') && (
+        <div className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 shadow-md">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-base shrink-0">🚀</span>
+            <div className="min-w-0">
+              <span className="font-bold text-[11px] uppercase tracking-wider">MediScribe {updateState.version} is available</span>
+              <span className="text-[10px] text-violet-200 ml-2 hidden sm:inline">New features · Bug fixes · Improved performance</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {updateState.status === 'downloaded' ? (
+              <button
+                onClick={() => (window as any).electron?.installUpdate?.()}
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1 rounded-full hover:bg-violet-50 transition-colors"
+              >
+                Install & Restart
+              </button>
+            ) : (
+              <button
+                onClick={() => (window as any).electron?.openExternal?.(updateState.downloadUrl || 'https://github.com/sibanisibani11-cpu/Mediscribe/releases/latest')}
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1 rounded-full hover:bg-violet-50 transition-colors"
+              >
+                Download Now
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <header className="p-4 flex flex-col gap-4">
         {/* Header Top: Title Left, Controls Right */}
