@@ -104,6 +104,13 @@ jobs:
             > .env
           echo ".env written successfully."
 
+      - name: Disable Windows Defender real-time monitoring (fixes EBUSY locks)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
+
       - name: Build Electron installers
         shell: bash
         run: |

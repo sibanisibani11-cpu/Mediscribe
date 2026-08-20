@@ -81,10 +81,23 @@ jobs:
             > .env
           echo ".env written successfully."
 
+      - name: Disable Windows Defender real-time monitoring (fixes EBUSY locks)
+        shell: powershell
+        run: |
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
+
       - name: Build AppX packages (x64 + arm64)
         run: npx electron-builder --win appx --x64 --arm64 --publish=never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean win-unpacked between builds
+        shell: powershell
+        run: |
+          Remove-Item -Recurse -Force "dist-electron\win-unpacked" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "dist-electron\win-arm64-unpacked" -ErrorAction SilentlyContinue
+          Write-Host "Cleaned unpacked directories."
 
       - name: Build Windows installers (NSIS + portable)
         run: npx electron-builder --win nsis portable --x64 --publish=never

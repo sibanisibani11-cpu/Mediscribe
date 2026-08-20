@@ -1547,8 +1547,9 @@ function destroyFloatingButton() {
 // Keyboard event handler
 // Keyboard event handler
 let isExpanding = false;
+let isSendingCounterKey = false;
 function handleKeyboardEvent(e) {
-    if (!keyboardListenerActive || isExpanding) return;
+    if (!keyboardListenerActive || isExpanding || isSendingCounterKey) return;
 
     // Safe logging to prevent EPIPE errors when process is shutting down
     // Log minimal key info only if necessary for debugging, commented out for now
@@ -1572,7 +1573,6 @@ function handleKeyboardEvent(e) {
             if (pendingMatches.length > 1) {
                 selectedMatchIndex = (selectedMatchIndex + 1) % pendingMatches.length;
                 updateKeywordDialog();
-                sendCounterKey('backspace');
                 return;
             }
         }
@@ -1581,7 +1581,6 @@ function handleKeyboardEvent(e) {
             if (pendingMatches.length > 1) {
                 selectedMatchIndex = (selectedMatchIndex + 1) % pendingMatches.length;
                 updateKeywordDialog();
-                sendCounterKey('up');
                 return;
             } else {
                 cancelKeywordExpansion();
@@ -1593,7 +1592,6 @@ function handleKeyboardEvent(e) {
             if (pendingMatches.length > 1) {
                 selectedMatchIndex = (selectedMatchIndex - 1 + pendingMatches.length) % pendingMatches.length;
                 updateKeywordDialog();
-                sendCounterKey('down');
                 return;
             } else {
                 cancelKeywordExpansion();
@@ -1606,7 +1604,6 @@ function handleKeyboardEvent(e) {
             const index = e.keycode - UiohookKey.Digit1;
             if (index < pendingMatches.length) {
                 selectedMatchIndex = index;
-                sendCounterKey('backspace');
                 confirmKeywordExpansion(true);
                 return;
             }
@@ -1988,36 +1985,44 @@ function cancelKeywordExpansion() {
 
 
 function sendCounterKey(action) {
+    // Guard: set flag so our own synthesized keypress is ignored by the uiohook handler,
+    // preventing an infinite loop where the counter key re-triggers navigation.
+    isSendingCounterKey = true;
+    const done = () => { setTimeout(() => { isSendingCounterKey = false; }, 150); };
+
     if (process.platform === 'darwin') {
         let keyCode;
         if (action === 'up') keyCode = 126;
         else if (action === 'down') keyCode = 125;
         else if (action === 'backspace') keyCode = 51;
-        if (!keyCode) return;
+        if (!keyCode) { done(); return; }
         exec(`osascript -e 'tell application "System Events" to key code ${keyCode}'`, (error) => {
             if (error) safeError('[MediScribe] Counter key error:', error);
+            done();
         });
     } else if (process.platform === 'win32') {
         let sendKey;
         if (action === 'up') sendKey = '{UP}';
         else if (action === 'down') sendKey = '{DOWN}';
         else if (action === 'backspace') sendKey = '{BACKSPACE}';
-        if (!sendKey) return;
+        if (!sendKey) { done(); return; }
         const script = `
             Add-Type -AssemblyName System.Windows.Forms
             [System.Windows.Forms.SendKeys]::SendWait("${sendKey}")
         `;
         const { spawn } = require('child_process');
         const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
-        ps.on('error', (error) => safeError('[MediScribe] Counter key error:', error));
+        ps.on('close', () => done());
+        ps.on('error', (error) => { safeError('[MediScribe] Counter key error:', error); done(); });
     } else {
         let xKey;
         if (action === 'up') xKey = 'Up';
         else if (action === 'down') xKey = 'Down';
         else if (action === 'backspace') xKey = 'BackSpace';
-        if (!xKey) return;
+        if (!xKey) { done(); return; }
         exec(`xdotool key ${xKey}`, (error) => {
             if (error) safeError('[MediScribe] Counter key error:', error);
+            done();
         });
     }
 }

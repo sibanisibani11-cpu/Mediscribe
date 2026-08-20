@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { safeStorage, BrowserWindow, shell } = require('electron');
+const { BrowserWindow, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const app = require('electron').app;
@@ -56,19 +56,7 @@ function getTokenFilePath() {
 function saveToken(token) {
   try {
     const tokenPath = getTokenFilePath();
-    let dataToWrite;
-    if (safeStorage.isEncryptionAvailable()) {
-      try {
-        dataToWrite = safeStorage.encryptString(JSON.stringify(token));
-      } catch (encryptError) {
-        console.warn('[OAuth] Encryption failed, falling back to plaintext storage:', encryptError);
-        dataToWrite = JSON.stringify({ _unencrypted: true, ...token });
-      }
-    } else {
-      console.warn('[OAuth] safeStorage encryption not available, storing plaintext');
-      dataToWrite = JSON.stringify({ _unencrypted: true, ...token });
-    }
-    fs.writeFileSync(tokenPath, dataToWrite);
+    fs.writeFileSync(tokenPath, JSON.stringify(token, null, 2));
     oauth2Client.setCredentials(token);
   } catch (e) {
     console.error('Failed to save token:', e);
@@ -79,30 +67,7 @@ function getToken() {
   try {
     const tokenPath = getTokenFilePath();
     if (fs.existsSync(tokenPath)) {
-      const fileData = fs.readFileSync(tokenPath);
-      
-      // Try to parse as JSON first (plaintext fallback)
-      try {
-        const parsed = JSON.parse(fileData.toString('utf8'));
-        if (parsed && parsed._unencrypted) {
-          const token = { ...parsed };
-          delete token._unencrypted;
-          oauth2Client.setCredentials(token);
-          return token;
-        }
-      } catch (jsonErr) {
-        // Not plaintext JSON, proceed to decryption
-      }
-
-      let tokenString;
-      try {
-        tokenString = safeStorage.decryptString(fileData);
-      } catch (decryptError) {
-        console.error('[OAuth] Failed to decrypt token:', decryptError);
-        return null;
-      }
-      
-      const token = JSON.parse(tokenString);
+      const token = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
       oauth2Client.setCredentials(token);
       return token;
     }
