@@ -1568,10 +1568,23 @@ function handleKeyboardEvent(e) {
         const isUp = e.keycode === UiohookKey.ArrowUp || e.keycode === 57416 || e.keycode === 72;
         const isSpace = e.keycode === UiohookKey.Space || e.keycode === 57;
 
-        if (isTab || isDown) {
+        if (isTab) {
             if (pendingMatches.length > 1) {
                 selectedMatchIndex = (selectedMatchIndex + 1) % pendingMatches.length;
                 updateKeywordDialog();
+                sendCounterKey('backspace');
+                return;
+            }
+        }
+
+        if (isDown) {
+            if (pendingMatches.length > 1) {
+                selectedMatchIndex = (selectedMatchIndex + 1) % pendingMatches.length;
+                updateKeywordDialog();
+                sendCounterKey('up');
+                return;
+            } else {
+                cancelKeywordExpansion();
                 return;
             }
         }
@@ -1580,35 +1593,40 @@ function handleKeyboardEvent(e) {
             if (pendingMatches.length > 1) {
                 selectedMatchIndex = (selectedMatchIndex - 1 + pendingMatches.length) % pendingMatches.length;
                 updateKeywordDialog();
+                sendCounterKey('down');
+                return;
+            } else {
+                cancelKeywordExpansion();
                 return;
             }
         }
 
-    // Handle Number Keys 1-9 for direct selection
-    if (e.keycode >= UiohookKey.Digit1 && e.keycode <= UiohookKey.Digit9) {
-        const index = e.keycode - UiohookKey.Digit1;
-        if (index < pendingMatches.length) {
-            selectedMatchIndex = index;
+        // Handle Number Keys 1-9 for direct selection
+        if (e.keycode >= UiohookKey.Digit1 && e.keycode <= UiohookKey.Digit9) {
+            const index = e.keycode - UiohookKey.Digit1;
+            if (index < pendingMatches.length) {
+                selectedMatchIndex = index;
+                sendCounterKey('backspace');
+                confirmKeywordExpansion(true);
+                return;
+            }
+        }
+
+        const isEnterKey = e.keycode === 28;
+        const isSpaceKey = e.keycode === UiohookKey.Space || e.keycode === 57;
+        const isTabKey = e.keycode === 15;
+        const isSpaceConfirm = isSpaceKey && currentTypingMode !== 'template';
+
+        // Confirm expansion (Enter always confirms, Tab confirms if only 1 match, Space confirms if only 1 match in keyword mode)
+        if (isEnterKey || (isTabKey && pendingMatches.length === 1) || (isSpaceConfirm && pendingMatches.length === 1)) {
             confirmKeywordExpansion(true);
             return;
         }
-    }
 
-    const isEnterKey = e.keycode === 28;
-    const isSpaceKey = e.keycode === UiohookKey.Space || e.keycode === 57;
-    const isTabKey = e.keycode === 15;
-    const isSpaceConfirm = isSpaceKey && currentTypingMode !== 'template';
-
-    // Confirm expansion (Enter always confirms, Tab confirms if only 1 match, Space confirms if only 1 match in keyword mode)
-    if (isEnterKey || (isTabKey && pendingMatches.length === 1) || (isSpaceConfirm && pendingMatches.length === 1)) {
-        confirmKeywordExpansion(true);
-        return;
-    }
-
-    // Any other non-character key while dialog is open should probably close it
-    if (!isTabKey && !isEnterKey && !isDown && !isUp && !isSpaceKey && !keycodeToChar(e.keycode, e.shiftKey)) {
-        cancelKeywordExpansion();
-    }
+        // Any other non-character key while dialog is open should probably close it
+        if (!isTabKey && !isEnterKey && !isDown && !isUp && !isSpaceKey && !keycodeToChar(e.keycode, e.shiftKey)) {
+            cancelKeywordExpansion();
+        }
     }
 
     // Handle Escape (1) to cancel pending keyword
@@ -1968,6 +1986,41 @@ function cancelKeywordExpansion() {
     pendingKeyword = null;
 }
 
+
+function sendCounterKey(action) {
+    if (process.platform === 'darwin') {
+        let keyCode;
+        if (action === 'up') keyCode = 126;
+        else if (action === 'down') keyCode = 125;
+        else if (action === 'backspace') keyCode = 51;
+        if (!keyCode) return;
+        exec(`osascript -e 'tell application "System Events" to key code ${keyCode}'`, (error) => {
+            if (error) safeError('[MediScribe] Counter key error:', error);
+        });
+    } else if (process.platform === 'win32') {
+        let sendKey;
+        if (action === 'up') sendKey = '{UP}';
+        else if (action === 'down') sendKey = '{DOWN}';
+        else if (action === 'backspace') sendKey = '{BACKSPACE}';
+        if (!sendKey) return;
+        const script = `
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.SendKeys]::SendWait("${sendKey}")
+        `;
+        const { spawn } = require('child_process');
+        const ps = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script]);
+        ps.on('error', (error) => safeError('[MediScribe] Counter key error:', error));
+    } else {
+        let xKey;
+        if (action === 'up') xKey = 'Up';
+        else if (action === 'down') xKey = 'Down';
+        else if (action === 'backspace') xKey = 'BackSpace';
+        if (!xKey) return;
+        exec(`xdotool key ${xKey}`, (error) => {
+            if (error) safeError('[MediScribe] Counter key error:', error);
+        });
+    }
+}
 
 async function deleteCharacters(count) {
     if (process.platform === 'darwin') {
@@ -4980,13 +5033,38 @@ ipcMain.on('recording-state-changed', (event, recording) => {
     }
 });
 
+const MODEL_MIN_SIZES = {
+    'tiny.en': 60 * 1024 * 1024,
+    'tiny': 60 * 1024 * 1024,
+    'base.en': 120 * 1024 * 1024,
+    'base': 120 * 1024 * 1024,
+    'small.en': 400 * 1024 * 1024,
+    'small': 400 * 1024 * 1024,
+    'medium.en': 1.2 * 1024 * 1024 * 1024,
+    'medium': 1.2 * 1024 * 1024 * 1024,
+    'large-v3': 2.5 * 1024 * 1024 * 1024
+};
+
+function isModelDownloadedAndValid(modelName) {
+    const modelPath = getModelPath(modelName);
+    if (!fs.existsSync(modelPath)) return false;
+    try {
+        const stats = fs.statSync(modelPath);
+        const minSize = MODEL_MIN_SIZES[modelName] || 50 * 1024 * 1024;
+        return stats.size >= minSize;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Get list of available models and their status
 ipcMain.handle('get-models', async () => {
     const models = SUPPORTED_MODELS.map(model => {
         const modelPath = getModelPath(model.name);
+        const isValid = isModelDownloadedAndValid(model.name);
         return {
             ...model,
-            downloaded: fs.existsSync(modelPath),
+            downloaded: isValid,
             path: modelPath,
             active: model.name === currentModel,
             isDeletable: fs.existsSync(modelPath) && modelPath.startsWith(app.getPath('userData'))
