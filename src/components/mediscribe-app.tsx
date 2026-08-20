@@ -575,34 +575,62 @@ export function MediScribeApp() {
     <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
 
       {/* ── Persistent Update Banner ─────────────────────────────────────── */}
-      {(updateState.status === 'update-available-gh' || updateState.status === 'downloaded') && (
+      {(updateState.status === 'update-available-gh' || updateState.status === 'available' || updateState.status === 'downloading' || updateState.status === 'downloaded') && (
         <div className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 shadow-md">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base shrink-0">🚀</span>
+            <span className="text-base shrink-0">
+              {updateState.status === 'downloading' ? '⏳' : updateState.status === 'downloaded' ? '✅' : '🚀'}
+            </span>
             <div className="min-w-0">
-              <span className="font-bold text-[11px] uppercase tracking-wider">MediScribe {updateState.version} is available</span>
-              <span className="text-[10px] text-violet-200 ml-2 hidden sm:inline">New features · Bug fixes · Improved performance</span>
+              {updateState.status === 'downloading' ? (
+                <span className="font-bold text-[11px] uppercase tracking-wider">
+                  Downloading update {updateState.version}… {updateState.percent || 0}%
+                </span>
+              ) : updateState.status === 'downloaded' ? (
+                <span className="font-bold text-[11px] uppercase tracking-wider">
+                  MediScribe {updateState.version} ready to install
+                </span>
+              ) : (
+                <>
+                  <span className="font-bold text-[11px] uppercase tracking-wider">MediScribe {updateState.version} is available</span>
+                  <span className="text-[10px] text-violet-200 ml-2 hidden sm:inline">New features · Bug fixes · Improved performance</span>
+                </>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {updateState.status === 'downloaded' ? (
               <button
                 onClick={() => (window as any).electron?.installUpdate?.()}
-                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1 rounded-full hover:bg-violet-50 transition-colors"
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all"
               >
-                Install & Restart
+                Restart to Update
               </button>
+            ) : updateState.status === 'downloading' ? (
+              <div className="text-[10px] font-bold text-violet-200 px-2">
+                Please wait…
+              </div>
             ) : (
               <button
-                onClick={() => (window as any).electron?.openExternal?.(updateState.downloadUrl || 'https://github.com/sibanisibani11-cpu/Mediscribe/releases/latest')}
-                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1 rounded-full hover:bg-violet-50 transition-colors"
+                onClick={() => {
+                  // Trigger electron-updater to download & install automatically
+                  setUpdateState(prev => ({ ...prev, status: 'available' }));
+                  (window as any).electron?.checkForUpdates?.().catch(() => {
+                    // electron-updater unavailable — open release page as fallback
+                    (window as any).electron?.openExternal?.(
+                      updateState.downloadUrl || 'https://github.com/sibanisibani11-cpu/Mediscribe/releases/latest'
+                    );
+                  });
+                }}
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all animate-pulse"
               >
-                Download Now
+                Update Now
               </button>
             )}
           </div>
         </div>
       )}
+
 
       <header className="p-4 flex flex-col gap-4">
         {/* Header Top: Title Left, Controls Right */}
