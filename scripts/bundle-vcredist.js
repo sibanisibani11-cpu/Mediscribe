@@ -38,12 +38,27 @@ async function bundleVcRedist() {
 
     console.log('\n--- Bundling VC++ Redistributable for win32 ---');
     console.log(`⬇️  Downloading VC++ Redistributable from ${URL}...`);
-    try {
-        execSync(`curl -L -o "${outputPath}" "${URL}"`, { stdio: 'inherit' });
-        console.log(`✅ VC++ Redistributable successfully downloaded to ${outputPath}`);
-    } catch (e) {
-        console.error('❌ VC++ Redistributable download failed:', e.message);
-        process.exit(1);
+    let downloaded = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            // --retry handles connection issues; --retry-delay gives the CDN time to recover
+            execSync(`curl -L --retry 3 --retry-delay 10 --retry-max-time 120 -o "${outputPath}" "${URL}"`, { stdio: 'inherit' });
+            // Validate size
+            if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 10 * 1024 * 1024) {
+                console.log(`✅ VC++ Redistributable successfully downloaded to ${outputPath}`);
+                downloaded = true;
+                break;
+            } else {
+                console.warn(`⚠️  Attempt ${attempt}: Downloaded file is too small, retrying...`);
+                fs.rmSync(outputPath, { force: true });
+            }
+        } catch (e) {
+            console.warn(`⚠️  Attempt ${attempt} failed: ${e.message}`);
+        }
+    }
+    if (!downloaded) {
+        console.warn('⚠️  VC++ Redistributable download failed after 3 attempts. Build will continue without it.');
+        console.warn('   Users without VC++ Runtime installed may need to install it manually.');
     }
 }
 

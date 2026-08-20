@@ -87,8 +87,10 @@ async function bundleOllama() {
                     console.warn('⚠️  Could not find ollama binary in extracted archive');
                 }
             } else if (platform === 'win32') {
-                // Windows: Extract using tar (built-in on Windows 10+)
-                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
+                // Windows: Use PowerShell Expand-Archive — GNU tar misinterprets D:\ as a remote host
+                const archivePathFwd = archivePath.replace(/\\/g, '/');
+                const extractedDirFwd = extractedDir.replace(/\\/g, '/');
+                execSync(`powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '${archivePath}' -DestinationPath '${extractedDir}'"`, { stdio: 'inherit' });
                 const src = path.join(extractedDir, 'ollama.exe');
                 if (fs.existsSync(src)) {
                     fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama.exe'));

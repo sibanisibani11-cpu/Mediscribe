@@ -162,9 +162,12 @@ async function bundleWhisper() {
         }
 
         try {
-            // Extract using unzip on Linux host, tar on macOS/Windows host
+            // Extract: use unzip on Linux, PowerShell on Windows, tar on macOS
+            // Note: GNU tar (Git for Windows) misinterprets D:\ paths as remote hosts
             if (process.platform === 'linux') {
                 execSync(`unzip -o "${archivePath}" -d "${extractedDir}"`, { stdio: 'inherit' });
+            } else if (process.platform === 'win32') {
+                execSync(`powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '${archivePath}' -DestinationPath '${extractedDir}'"`, { stdio: 'inherit' });
             } else {
                 execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
             }
