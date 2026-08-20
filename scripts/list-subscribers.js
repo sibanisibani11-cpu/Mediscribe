@@ -268,22 +268,28 @@ async function getSubscribers() {
             const authList = await authAdmin.listUsers(200);
             authList.users.forEach(u => {
                 if (u.email && !recordsMap.has(u.email)) {
+                    const createdDate = new Date(u.metadata.creationTime);
+                    const trialExpDate = new Date(createdDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+                    const diffMs = trialExpDate.getTime() - now.getTime();
+                    const daysRem = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                    const isTrialActive = diffMs > 0;
+
                     recordsMap.set(u.email, {
                         id: u.uid,
                         source: 'Firebase Auth',
                         email: u.email,
                         contact: u.phoneNumber || 'N/A',
                         hwid: 'N/A',
-                        plan: 'free',
+                        plan: 'trial',
                         amount: '0 INR',
                         paymentId: 'N/A',
-                        paymentStatus: 'free',
-                        status: 'Inactive / Free',
-                        isActive: false,
-                        subscribedOn: new Date(u.metadata.creationTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-                        expiresOn: 'N/A',
-                        validity: 'N/A',
-                        rawExpiresAt: null,
+                        paymentStatus: isTrialActive ? 'trial' : 'expired',
+                        status: isTrialActive ? 'Free Trial (Active)' : 'Free Trial (Expired)',
+                        isActive: isTrialActive,
+                        subscribedOn: createdDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        expiresOn: trialExpDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        validity: isTrialActive ? `${daysRem} days left` : `Expired ${Math.abs(daysRem)} days ago`,
+                        rawExpiresAt: trialExpDate.toISOString(),
                         rawCreatedAt: u.metadata.creationTime,
                     });
                 }

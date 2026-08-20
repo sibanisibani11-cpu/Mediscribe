@@ -3854,9 +3854,11 @@ app.whenReady().then(() => {
             const now = new Date();
             const userMap = new Map();
 
-            function getOrCreateUser(key, email, phone, hwid) {
+            function getOrCreateUser(key, email, phone, hwid, uid) {
                 let existingKey = key;
-                if (email && userMap.has(email.toLowerCase())) {
+                if (uid && userMap.has(`uid_${uid}`)) {
+                    existingKey = `uid_${uid}`;
+                } else if (email && userMap.has(email.toLowerCase())) {
                     existingKey = email.toLowerCase();
                 } else if (hwid && hwid !== 'N/A' && userMap.has(`hwid_${hwid}`)) {
                     existingKey = `hwid_${hwid}`;
@@ -3870,17 +3872,25 @@ app.whenReady().then(() => {
                         email: email ? email.toLowerCase() : null,
                         phone: phone || null,
                         hwid: hwid || null,
+                        uid: uid || null,
                         displayName: email || phone || (hwid ? `Device [${hwid}]` : 'Subscriber'),
                         payments: [],
                     });
                 }
                 const u = userMap.get(existingKey);
+                if (uid && !u.uid) u.uid = uid;
                 if (email && !u.email) u.email = email.toLowerCase();
                 if (phone && !u.phone && phone !== 'N/A') u.phone = phone;
                 if (hwid && !u.hwid && hwid !== 'N/A') u.hwid = hwid;
                 if (u.displayName === 'Subscriber' && (u.email || u.phone)) {
                     u.displayName = u.email || u.phone || u.displayName;
                 }
+
+                if (uid) userMap.set(`uid_${uid}`, u);
+                if (email) userMap.set(email.toLowerCase(), u);
+                if (hwid && hwid !== 'N/A') userMap.set(`hwid_${hwid}`, u);
+                if (phone && phone !== 'N/A') userMap.set(`phone_${phone}`, u);
+
                 return u;
             }
 
@@ -3974,7 +3984,7 @@ app.whenReady().then(() => {
                         const notes = p.notes || {};
                         const hwid = notes.activation_id || notes.hwid || null;
                         const mainKey = email || (hwid ? `hwid_${hwid}` : (phone ? `phone_${phone}` : p.id));
-                        const userObj = getOrCreateUser(mainKey, email, phone, hwid);
+                        const userObj = getOrCreateUser(mainKey, email, phone, hwid, null);
                         userObj.payments.push(p);
                     }
                 }
@@ -4009,8 +4019,9 @@ app.whenReady().then(() => {
                         const email = data.email || data.userEmail || (docSnap.id.includes('@') ? docSnap.id : null);
                         const hwid = data.licenseDetails?.hwid || null;
                         const phone = data.contact || null;
-                        const mainKey = email ? email.toLowerCase() : (hwid ? `hwid_${hwid}` : docSnap.id);
-                        const userObj = getOrCreateUser(mainKey, email, phone, hwid);
+                        const uid = docSnap.id;
+                        const mainKey = email ? email.toLowerCase() : (hwid ? `hwid_${hwid}` : `uid_${uid}`);
+                        const userObj = getOrCreateUser(mainKey, email, phone, hwid, uid);
                         userObj.firestoreDoc = { id: docSnap.id, ...data };
                     });
 
@@ -4018,9 +4029,10 @@ app.whenReady().then(() => {
                         const auth = admin.auth();
                         const authList = await auth.listUsers(200);
                         authList.users.forEach(u => {
-                            if (u.email) {
-                                const email = u.email.toLowerCase();
-                                const userObj = getOrCreateUser(email, email, u.phoneNumber || null, null);
+                            if (u.email || u.uid) {
+                                const email = u.email ? u.email.toLowerCase() : null;
+                                const mainKey = email || `uid_${u.uid}`;
+                                const userObj = getOrCreateUser(mainKey, email, u.phoneNumber || null, null, u.uid);
                                 userObj.authDoc = {
                                     uid: u.uid,
                                     email: u.email,
@@ -4034,11 +4046,12 @@ app.whenReady().then(() => {
                 console.warn('[IPC get-admin-subscribers] Firebase error:', e);
             }
 
-            // Transform
+            // Transform unique user records
             const records = [];
             let totalRevenueINR = 0;
+            const uniqueUsers = new Set(userMap.values());
 
-            userMap.forEach(user => {
+            uniqueUsers.forEach(user => {
                 const history = [];
                 let lifetimePaidINR = 0;
                 user.payments.sort((a, b) => b.created_at - a.created_at);
@@ -4147,41 +4160,36 @@ app.whenReady().then(() => {
                         rawStartDate = fsData.createdAt;
                         startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }
-                } else if (user.firestoreDoc && (user.firestoreDoc.trialExpiresAt || (!user.firestoreDoc.isActivated && user.firestoreDoc.createdAt))) {
-                    const fsData = user.firestoreDoc;
-                    const trialExp = fsData.trialExpiresAt || (fsData.createdAt ? new Date(new Date(fsData.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
-                    let isTrial = false;
+                } else if ((user.firestoreDoc && (user.firestoreDoc.trialExpiresAt || user.firestoreDoc.createdAt)) || user.authDoc) {
+                    const fsData = user.firestoreDoc || {};
+                    const trialStart = fsData.trialStartedAt || fsData.createdAt || user.authDoc?.creationTime || null;
+                    const trialExp = fsData.trialExpiresAt || (trialStart ? new Date(new Date(trialStart).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
+
                     if (trialExp) {
                         rawExpiresAt = trialExp;
                         const expDate = new Date(trialExp);
                         expiresAt = expDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                         const diffMs = expDate.getTime() - now.getTime();
                         daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                        currentPlan = 'trial';
                         if (diffMs > 0) {
                             isActive = true;
-                            isTrial = true;
-                            currentPlan = 'trial';
                             computedStatus = 'Free Trial (Active)';
                         } else {
                             isActive = false;
-                            currentPlan = 'trial';
                             computedStatus = 'Free Trial (Expired)';
                         }
                     }
 
-                    if (fsData.createdAt) {
-                        rawStartDate = fsData.createdAt;
-                        startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    if (trialStart) {
+                        rawStartDate = trialStart;
+                        startDate = new Date(trialStart).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }
                 } else if (latestRefunded) {
                     computedStatus = 'Refunded';
                     const createdAt = new Date(latestRefunded.created_at * 1000);
                     startDate = createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     currentAmount = latestRefunded.amount ? latestRefunded.amount / 100 : 0;
-                } else if (user.authDoc) {
-                    const createdAt = new Date(user.authDoc.creationTime);
-                    startDate = createdAt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                    rawStartDate = user.authDoc.creationTime;
                 }
 
                 let validityText = 'N/A';
