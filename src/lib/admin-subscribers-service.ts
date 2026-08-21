@@ -42,6 +42,31 @@ export interface AdminSubscriberRecord {
   history: SubscriptionHistoryItem[];
 }
 
+export interface DownloadStats {
+  total: number;
+  windows: number;
+  mac: number;
+  linux: number;
+  guest: number;
+  loggedIn: number;
+  windowsBreakdown?: {
+    msStore: number;
+    directExe: number;
+  };
+  sources?: {
+    github?: { windows: number; mac: number; linux: number; total: number };
+    msStore?: { total: number };
+    website?: { windows: number; mac: number; linux: number; guest: number; loggedIn: number; total: number };
+  };
+  recentDownloads?: Array<{
+    os: 'windows' | 'mac' | 'linux';
+    isGuest: boolean;
+    user?: string;
+    timestamp: string;
+    country?: string;
+  }>;
+}
+
 export interface AdminSubscribersResponse {
   success: boolean;
   subscribers: AdminSubscriberRecord[];
@@ -54,6 +79,7 @@ export interface AdminSubscribersResponse {
     free: number;
     totalRevenueINR: number;
   };
+  downloads?: DownloadStats;
   error?: string;
 }
 

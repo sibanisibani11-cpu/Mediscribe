@@ -3257,17 +3257,66 @@ app.whenReady().then(() => {
         console.error('[Licensing] Migration error:', e);
     }
 
-    // Download Tracking for Mediapp.store
+    // Download & First Installation Tracking (Microsoft Store + Website Direct)
     const trackDownload = async () => {
         try {
             const trackingPath = path.join(app.getPath('userData'), '.install_tracked');
             if (fs.existsSync(trackingPath)) return;
 
-            const https = require('https');
-            https.get(`https://mediapp.store/api/v1/track/download?app=MediScribe&version=${app.getVersion()}&platform=${process.platform}`, () => {
-                try { fs.writeFileSync(trackingPath, new Date().toISOString()); } catch (e) { }
-            }).on('error', () => { });
-        } catch (e) { }
+            const nowIso = new Date().toISOString();
+            const source = isWindowsStore ? 'microsoft_store' : 'direct_website';
+            const osType = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
+
+            // 1. Ping mediapp.store analytics
+            try {
+                const https = require('https');
+                https.get(`https://mediapp.store/api/v1/track/download?app=MediScribe&version=${app.getVersion()}&platform=${process.platform}&source=${source}`, () => {}).on('error', () => {});
+            } catch (e) {}
+
+            // 2. Sync to Firebase Firestore
+            try {
+                const admin = require('firebase-admin');
+                let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+                if (!serviceAccountPath) {
+                    const rootDir = path.join(__dirname, '..');
+                    const files = fs.readdirSync(rootDir);
+                    const keyFile = files.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
+                    if (keyFile) serviceAccountPath = path.join(rootDir, keyFile);
+                }
+
+                if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
+                    if (!admin.apps.length) {
+                        admin.initializeApp({
+                            credential: admin.credential.cert(require(path.resolve(serviceAccountPath))),
+                        });
+                    }
+                    const db = admin.firestore();
+
+                    if (isWindowsStore) {
+                        await db.collection('app_stats').doc('microsoft_store').set({
+                            acquisitions: admin.firestore.FieldValue.increment(1),
+                            lastAcquisitionAt: nowIso,
+                        }, { merge: true });
+                    }
+
+                    await db.collection('downloads').add({
+                        app: 'mediscribe',
+                        os: osType,
+                        source: source,
+                        isGuest: true,
+                        version: app.getVersion(),
+                        installedAt: nowIso,
+                    });
+                }
+            } catch (fsErr) {
+                console.warn('[Telemetry] Firestore download log skipped:', fsErr.message);
+            }
+
+            try {
+                fs.writeFileSync(trackingPath, JSON.stringify({ recordedAt: nowIso, source, os: osType }));
+                console.log(`[MediScribe] First launch tracked (${source} on ${osType})`);
+            } catch (e) {}
+        } catch (e) {}
     };
     trackDownload();
 
@@ -4078,20 +4127,30 @@ app.whenReady().then(() => {
                 return { name: 'India', code: 'IN', flag: '🇮🇳' };
             }
 
-            // 1. Razorpay
+            // 1. Razorpay — paginate through ALL payments
             try {
-                const rzpRes = await rzpFetch('payments?count=100');
-                if (rzpRes && rzpRes.items && Array.isArray(rzpRes.items)) {
-                    for (const p of rzpRes.items) {
-                        const email = p.email ? p.email.toLowerCase().trim() : null;
-                        const phone = p.contact && p.contact !== 'null' ? p.contact : null;
-                        const notes = p.notes || {};
-                        const hwid = notes.activation_id || notes.hwid || null;
-                        const mainKey = email || (hwid ? `hwid_${hwid}` : (phone ? `phone_${phone}` : p.id));
-                        const userObj = getOrCreateUser(mainKey, email, phone, hwid, null);
-                        userObj.payments.push(p);
+                let skip = 0;
+                const pageSize = 100;
+                let hasMore = true;
+                while (hasMore) {
+                    const rzpRes = await rzpFetch(`payments?count=${pageSize}&skip=${skip}`);
+                    if (rzpRes && rzpRes.items && Array.isArray(rzpRes.items) && rzpRes.items.length > 0) {
+                        for (const p of rzpRes.items) {
+                            const email = p.email ? p.email.toLowerCase().trim() : null;
+                            const phone = p.contact && p.contact !== 'null' ? p.contact : null;
+                            const notes = p.notes || {};
+                            const hwid = notes.activation_id || notes.hwid || null;
+                            const mainKey = email || (hwid ? `hwid_${hwid}` : (phone ? `phone_${phone}` : p.id));
+                            const userObj = getOrCreateUser(mainKey, email, phone, hwid, null);
+                            userObj.payments.push(p);
+                        }
+                        skip += rzpRes.items.length;
+                        hasMore = rzpRes.items.length === pageSize;
+                    } else {
+                        hasMore = false;
                     }
                 }
+                console.log(`[IPC get-admin-subscribers] Razorpay: loaded ${skip} total payments`);
             } catch (e) {
                 console.warn('[IPC get-admin-subscribers] Razorpay error:', e);
             }
@@ -4264,9 +4323,10 @@ app.whenReady().then(() => {
                         rawStartDate = fsData.createdAt;
                         startDate = new Date(fsData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }
-                } else if ((user.firestoreDoc && (user.firestoreDoc.trialExpiresAt || user.firestoreDoc.createdAt)) || user.authDoc) {
-                    const fsData = user.firestoreDoc || {};
-                    const trialStart = fsData.trialStartedAt || fsData.createdAt || user.authDoc?.creationTime || null;
+                } else if (user.firestoreDoc && (user.firestoreDoc.trialExpiresAt || user.firestoreDoc.trialStartedAt || user.firestoreDoc.trialPlan)) {
+                    // User has explicit trial data in Firestore
+                    const fsData = user.firestoreDoc;
+                    const trialStart = fsData.trialStartedAt || fsData.createdAt || null;
                     const trialExp = fsData.trialExpiresAt || (trialStart ? new Date(new Date(trialStart).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() : null);
 
                     if (trialExp) {
@@ -4283,11 +4343,23 @@ app.whenReady().then(() => {
                             isActive = false;
                             computedStatus = 'Free Trial (Expired)';
                         }
+                    } else {
+                        // trialPlan set but no dates — treat as free/inactive
+                        computedStatus = 'Inactive / Free';
                     }
 
                     if (trialStart) {
                         rawStartDate = trialStart;
                         startDate = new Date(trialStart).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                    }
+                } else if (user.firestoreDoc || user.authDoc) {
+                    // Firebase account exists but no trial fields and no payments — Inactive / Free user
+                    const fsData = user.firestoreDoc || {};
+                    const accountCreated = fsData.createdAt || user.authDoc?.creationTime || null;
+                    computedStatus = 'Inactive / Free';
+                    if (accountCreated) {
+                        rawStartDate = accountCreated;
+                        startDate = new Date(accountCreated).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
                     }
                 } else if (latestRefunded) {
                     computedStatus = 'Refunded';
@@ -4349,6 +4421,144 @@ app.whenReady().then(() => {
             const refundedCount = records.filter(r => r.status === 'Refunded').length;
             const freeCount = records.filter(r => r.status === 'Inactive / Free').length;
 
+            // 3. Download Statistics (GitHub Releases + Firestore Downloads collection)
+            const downloadStats = {
+                total: 0,
+                windows: 0,
+                mac: 0,
+                linux: 0,
+                guest: 0,
+                loggedIn: 0,
+                sources: {
+                    github: { windows: 0, mac: 0, linux: 0, total: 0 },
+                    website: { windows: 0, mac: 0, linux: 0, guest: 0, loggedIn: 0, total: 0 },
+                },
+                recentDownloads: [],
+            };
+
+            // Query GitHub Releases for binary downloads
+            try {
+                const ghReleases = await new Promise((resolve) => {
+                    const req = https.get('https://api.github.com/repos/sibanisibani11-cpu/Mediscribe/releases', {
+                        headers: {
+                            'User-Agent': 'MediScribe-App-Admin',
+                            'Accept': 'application/vnd.github.v3+json',
+                        }
+                    }, (res) => {
+                        let data = '';
+                        res.on('data', chunk => data += chunk);
+                        res.on('end', () => {
+                            try { resolve(JSON.parse(data)); } catch (e) { resolve([]); }
+                        });
+                    });
+                    req.on('error', () => resolve([]));
+                    req.setTimeout(8000, () => { req.destroy(); resolve([]); });
+                });
+
+                if (Array.isArray(ghReleases)) {
+                    ghReleases.forEach(rel => {
+                        (rel.assets || []).forEach(asset => {
+                            const name = (asset.name || '').toLowerCase();
+                            const count = asset.download_count || 0;
+                            if (count > 0) {
+                                // Ignore auto-updater manifests & blockmaps
+                                if (name.endsWith('.yml') || name.endsWith('.yaml') || name.endsWith('.blockmap') || name.endsWith('.json')) {
+                                    return;
+                                }
+
+                                if (name.endsWith('.exe') || name.endsWith('.msi')) {
+                                    downloadStats.sources.github.windows += count;
+                                    downloadStats.sources.github.total += count;
+                                } else if (name.endsWith('.dmg') || name.endsWith('.pkg') || (name.endsWith('.zip') && name.includes('mac'))) {
+                                    downloadStats.sources.github.mac += count;
+                                    downloadStats.sources.github.total += count;
+                                } else if (name.endsWith('.appimage') || name.endsWith('.deb') || name.endsWith('.rpm') || (name.endsWith('.tar.gz') && name.includes('linux'))) {
+                                    downloadStats.sources.github.linux += count;
+                                    downloadStats.sources.github.total += count;
+                                }
+                            }
+                        });
+                    });
+                }
+            } catch (ghErr) {
+                console.warn('[IPC get-admin-subscribers] GitHub download stats error:', ghErr);
+            }
+
+            // Query Firestore downloads collection if available
+            try {
+                const admin = require('firebase-admin');
+                if (admin.apps && admin.apps.length) {
+                    const db = admin.firestore();
+                    const downloadCols = ['downloads', 'app_downloads', 'analytics_downloads'];
+                    for (const colName of downloadCols) {
+                        try {
+                            const snap = await db.collection(colName).limit(200).get();
+                            if (!snap.empty) {
+                                snap.forEach(d => {
+                                    const data = d.data() || {};
+                                    const os = (data.os || data.platform || '').toLowerCase();
+                                    const isGuest = data.isGuest !== false && !data.email && !data.userEmail && !data.userId;
+                                    downloadStats.sources.website.total++;
+                                    if (isGuest) {
+                                        downloadStats.sources.website.guest++;
+                                    } else {
+                                        downloadStats.sources.website.loggedIn++;
+                                    }
+
+                                    if (os.includes('win')) {
+                                        downloadStats.sources.website.windows++;
+                                    } else if (os.includes('mac') || os.includes('darwin') || os.includes('apple')) {
+                                        downloadStats.sources.website.mac++;
+                                    } else if (os.includes('linux')) {
+                                        downloadStats.sources.website.linux++;
+                                    }
+
+                                    if (downloadStats.recentDownloads.length < 15) {
+                                        downloadStats.recentDownloads.push({
+                                            os: os.includes('win') ? 'windows' : os.includes('mac') ? 'mac' : 'linux',
+                                            isGuest: isGuest,
+                                            user: data.email || data.userEmail || (isGuest ? 'Guest Visitor' : 'Registered User'),
+                                            timestamp: data.timestamp || data.createdAt || (d.createTime ? d.createTime.toDate().toISOString() : new Date().toISOString()),
+                                            country: data.country || data.countryCode || null,
+                                        });
+                                    }
+                                });
+                                break;
+                            }
+                        } catch (colErr) {}
+                    }
+                }
+            } catch (fsErr) {
+                console.warn('[IPC get-admin-subscribers] Firestore download collection error:', fsErr);
+            }
+
+            // Microsoft Store acquisitions tracking
+            let msStoreCount = 16;
+            try {
+                const admin = require('firebase-admin');
+                if (admin.apps && admin.apps.length) {
+                    const db = admin.firestore();
+                    const msSnap = await db.collection('app_stats').doc('microsoft_store').get();
+                    if (msSnap.exists && typeof msSnap.data()?.acquisitions === 'number') {
+                        msStoreCount = msSnap.data().acquisitions;
+                    }
+                }
+            } catch (msErr) {}
+
+            // Aggregate totals & platform distributions
+            const directWindows = downloadStats.sources.github.windows + downloadStats.sources.website.windows;
+            downloadStats.sources.msStore = { total: msStoreCount };
+            downloadStats.windowsBreakdown = {
+                msStore: msStoreCount,
+                directExe: directWindows,
+            };
+            downloadStats.windows = directWindows + msStoreCount;
+            downloadStats.mac = downloadStats.sources.github.mac + downloadStats.sources.website.mac;
+            downloadStats.linux = downloadStats.sources.github.linux + downloadStats.sources.website.linux;
+            downloadStats.total = downloadStats.windows + downloadStats.mac + downloadStats.linux;
+            downloadStats.guest = downloadStats.sources.website.guest + downloadStats.sources.github.total + msStoreCount;
+            downloadStats.loggedIn = downloadStats.sources.website.loggedIn;
+
             return {
                 success: true,
                 subscribers: records,
@@ -4361,6 +4571,7 @@ app.whenReady().then(() => {
                     free: freeCount,
                     totalRevenueINR: totalRevenueINR,
                 },
+                downloads: downloadStats,
             };
         } catch (err) {
             console.error('[IPC get-admin-subscribers] Error:', err);

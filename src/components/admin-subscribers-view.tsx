@@ -27,7 +27,7 @@ import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { useToast } from '../hooks/use-toast';
 import { cn } from '../lib/utils';
-import { AdminSubscriberRecord } from '../lib/admin-subscribers-service';
+import { AdminSubscriberRecord, DownloadStats } from '../lib/admin-subscribers-service';
 
 interface AdminSubscribersViewProps {
   onBack: () => void;
@@ -55,6 +55,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     free: 0,
     totalRevenueINR: 0,
   });
+  const [downloadStats, setDownloadStats] = useState<DownloadStats | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,6 +75,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         if (res.success && res.subscribers) {
           setSubscribers(res.subscribers);
           if (res.summary) setSummary(res.summary);
+          if (res.downloads) setDownloadStats(res.downloads);
         } else {
           toast({
             variant: 'destructive',
@@ -90,6 +92,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         if (data.success && data.subscribers) {
           setSubscribers(data.subscribers);
           if (data.summary) setSummary(data.summary);
+          if (data.downloads) setDownloadStats(data.downloads);
         } else {
           toast({
             variant: 'destructive',
@@ -112,6 +115,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
 
   useEffect(() => {
     loadSubscribersData();
+    // Auto-refresh real-time metrics every 30 seconds while Admin view is open
+    const interval = setInterval(() => {
+      loadSubscribersData();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [currentUser]);
 
   // Filtered subscribers list
@@ -404,6 +412,149 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
           </div>
         </div>
       </div>
+
+      {/* MediScribe Download & Platform Intelligence Card */}
+      {downloadStats && (
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 dark:from-slate-900/90 dark:via-violet-950/30 dark:to-slate-950 border border-violet-500/20 shadow-xl p-5 text-white">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
+                <Download className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                    MediScribe Download Intelligence
+                  </h3>
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-400/30 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    Real-Time Live
+                  </span>
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-violet-500/20 text-violet-300 rounded-full border border-violet-400/30">
+                    MS Store + Web
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Live real-time aggregation across Microsoft Store, Website Direct & GitHub Releases
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
+                <span className="text-[11px] font-bold text-slate-300">Total Downloads:</span>
+                <span className="text-lg font-black text-white">{downloadStats.total}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* OS Platform & User Breakdown Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4">
+            {/* Windows */}
+            <div className="bg-white/5 hover:bg-white/10 transition-colors border border-white/10 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🪟</span>
+                  <span className="text-xs font-black text-white tracking-wide">Windows (Store & Direct)</span>
+                </div>
+                <span className="text-xs font-bold text-cyan-400">
+                  {downloadStats.total > 0 ? `${Math.round((downloadStats.windows / downloadStats.total) * 100)}%` : '0%'}
+                </span>
+              </div>
+              <div className="mt-3 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-white">{downloadStats.windows}</span>
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="bg-blue-500/20 text-cyan-300 font-bold px-1.5 py-0.5 rounded border border-cyan-400/30">
+                    🛍️ Store: {downloadStats.windowsBreakdown?.msStore ?? 16}
+                  </span>
+                  <span className="bg-white/10 text-slate-300 font-bold px-1.5 py-0.5 rounded">
+                    EXE: {downloadStats.windowsBreakdown?.directExe ?? 2}
+                  </span>
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${downloadStats.total > 0 ? (downloadStats.windows / downloadStats.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* macOS */}
+            <div className="bg-white/5 hover:bg-white/10 transition-colors border border-white/10 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🍎</span>
+                  <span className="text-xs font-black text-white tracking-wide">macOS (DMG / Apple Silicon)</span>
+                </div>
+                <span className="text-xs font-bold text-violet-400">
+                  {downloadStats.total > 0 ? `${Math.round((downloadStats.mac / downloadStats.total) * 100)}%` : '0%'}
+                </span>
+              </div>
+              <div className="mt-3 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-white">{downloadStats.mac}</span>
+                <span className="text-[10px] text-slate-400 font-medium">installations</span>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-violet-500 to-fuchsia-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${downloadStats.total > 0 ? (downloadStats.mac / downloadStats.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Linux */}
+            <div className="bg-white/5 hover:bg-white/10 transition-colors border border-white/10 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🐧</span>
+                  <span className="text-xs font-black text-white tracking-wide">Linux (AppImage / DEB)</span>
+                </div>
+                <span className="text-xs font-bold text-amber-400">
+                  {downloadStats.total > 0 ? `${Math.round((downloadStats.linux / downloadStats.total) * 100)}%` : '0%'}
+                </span>
+              </div>
+              <div className="mt-3 flex items-baseline justify-between">
+                <span className="text-2xl font-black text-white">{downloadStats.linux}</span>
+                <span className="text-[10px] text-slate-400 font-medium">installations</span>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${downloadStats.total > 0 ? (downloadStats.linux / downloadStats.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* User Type & Conversion Footnote */}
+          <div className="mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
+                <span className="h-2 w-2 rounded-full bg-blue-400" />
+                <span className="text-slate-300 font-medium">Guest (Direct) Downloads:</span>
+                <span className="font-bold text-white">{downloadStats.guest}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-slate-300 font-medium">Logged-In Downloads:</span>
+                <span className="font-bold text-white">{downloadStats.loggedIn}</span>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              <span>🎯 Conversion Rate:</span>
+              <span className="font-bold text-emerald-400">
+                {downloadStats.total > 0 ? `${Math.round((summary.totalUsers / downloadStats.total) * 100)}%` : '0%'}
+              </span>
+              <span>(Downloaded → App Registered)</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">

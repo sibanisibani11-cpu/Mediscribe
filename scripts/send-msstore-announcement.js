@@ -17,7 +17,6 @@ const RECIPIENTS = [
     'sr9718454@gmail.com',
     'babanraojagdale3293@gmail.com',
     'ibrahimwar374@gamil.com',
-    'abcd@abd.com',
     'tinulukose@gmail.com',
     'kuddushahmed223@gmail.com',
     'cashwini993@gmail.com',
@@ -26,6 +25,7 @@ const RECIPIENTS = [
     'arvind.suresh93@gmail.com',
     'work.arunava@gmail.com',
     'jasim.jaleel@gmail.com',
+    'drjasimjaleel@aiims.edu',
     'drchlua@gmail.com',
     'humairajaan229@gmail.com',
     'das034267@gmail.com',
@@ -112,29 +112,29 @@ const RECIPIENTS = [
 
 const resend = new Resend(RESEND_API_KEY);
 
-// Helper function to sleep
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function sendAnnouncements() {
-    console.log('🚀 Starting MediScribe v1.1.0 Announcement Broadcast...');
+async function sendMicrosoftStoreAnnouncement() {
+    console.log(`🚀 Starting Microsoft Store Announcement Broadcast to ${RECIPIENTS.length} users...`);
     console.log(`📡 Using Sender: ${FROM_EMAIL}`);
 
-    const htmlPath = path.join(__dirname, '../docs/v1.1.0-announcement-email.html');
+    const htmlPath = path.join(__dirname, '../docs/msstore-announcement-email.html');
     const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
     let successCount = 0;
     let failCount = 0;
 
-    for (const email of RECIPIENTS) {
+    for (let i = 0; i < RECIPIENTS.length; i++) {
+        const email = RECIPIENTS[i];
         try {
-            console.log(`Sending to: ${email}...`);
+            console.log(`[${i + 1}/${RECIPIENTS.length}] Sending to: ${email}...`);
 
             const { data, error } = await resend.emails.send({
                 from: FROM_EMAIL,
                 to: [email],
-                subject: 'New Release: MediScribe v1.1.0 - The Midnight Cobalt Update',
+                subject: '🎉 MediScribe is now available on the Microsoft Store!',
                 html: htmlContent,
-                text: `MediScribe v1.1.0 Update\n\nDear Doctor,\n\nWe are excited to announce version 1.1.0 of MediScribe. This update introduces the "Midnight Cobalt" theme and improved performance across Windows, Mac, and Linux.\n\nDownload the new version at: https://mediapp.store/apps/YSP7J8pT50Xd2eBTwnBU\n\nRegards,\nMediScribe Team`,
+                text: `MediScribe on Microsoft Store\n\nDear Doctor,\n\nWe are excited to announce that MediScribe is now officially certified and available on the Microsoft Store for Windows with 1-click installation and automatic updates!\n\nGet MediScribe on Microsoft Store here:\nhttps://apps.microsoft.com/store/detail/9PNJJSPMX9TR?cid=DevShareMCLPCS\n\nRegards,\nMediScribe Team\nhttps://mediapp.store`,
             });
 
             if (error) {
@@ -149,12 +149,12 @@ async function sendAnnouncements() {
             failCount++;
         }
 
-        // ⏱️ Wait for 2000ms (2 seconds) to protect domain reputation
-        await sleep(2000);
+        // Sleep 1.5 seconds between emails to respect Resend rate limits
+        await sleep(1500);
     }
 
     console.log('\n✨ Broadcast complete.');
     console.log(`📊 Summary: ${successCount} Success, ${failCount} Failed.`);
 }
 
-sendAnnouncements();
+sendMicrosoftStoreAnnouncement();
