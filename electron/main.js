@@ -253,6 +253,66 @@ ipcMain.handle('sync-cloud', async (event, strategy = 'merge') => {
 const driveSync = require('./google-drive-sync');
 const isDev = process.env.NODE_ENV === 'development';
 
+function getFirebaseAdminDb() {
+    try {
+        const admin = require('firebase-admin');
+        let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+        if (!serviceAccountPath) {
+            const rootDir = path.join(__dirname, '..');
+            const files = fs.readdirSync(rootDir);
+            const keyFile = files.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
+            if (keyFile) serviceAccountPath = path.join(rootDir, keyFile);
+        }
+
+        if (!serviceAccountPath || !fs.existsSync(serviceAccountPath)) return null;
+
+        if (!admin.apps.length) {
+            admin.initializeApp({
+                credential: admin.credential.cert(require(path.resolve(serviceAccountPath))),
+            });
+        }
+
+        return { admin, db: admin.firestore() };
+    } catch (err) {
+        console.warn('[Telemetry] Firebase admin unavailable:', err.message);
+        return null;
+    }
+}
+
+function getPlatformName() {
+    if (process.platform === 'win32') return 'windows';
+    if (process.platform === 'darwin') return 'mac';
+    return 'linux';
+}
+
+function getInstallSource() {
+    return isWindowsStore ? 'microsoft_store' : 'direct_website';
+}
+
+function sendTrackingPing(eventName, payload) {
+    return new Promise((resolve) => {
+        try {
+            const https = require('https');
+            const params = new URLSearchParams();
+            Object.entries(payload || {}).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) params.set(key, String(value));
+            });
+
+            const req = https.get(`https://mediapp.store/api/v1/track/${eventName}?${params.toString()}`, (res) => {
+                res.resume();
+                resolve(res.statusCode >= 200 && res.statusCode < 400);
+            });
+            req.on('error', () => resolve(false));
+            req.setTimeout(5000, () => {
+                req.destroy();
+                resolve(false);
+            });
+        } catch (e) {
+            resolve(false);
+        }
+    });
+}
+
 // Single instance lock to prevent double icons/instances
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -3257,41 +3317,45 @@ app.whenReady().then(() => {
         console.error('[Licensing] Migration error:', e);
     }
 
-    // Download & First Installation Tracking (Microsoft Store + Website Direct)
-    const trackDownload = async () => {
+    // Download/first-open tracking plus every app launch, including anonymous users.
+    const launchSessionId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+    let currentLaunchDocId = null;
+    let currentLaunchTracked = false;
+
+    const baseTrackingPayload = () => {
+        const hwid = getMachineId();
+        return {
+            app: 'MediScribe',
+            version: app.getVersion(),
+            platform: process.platform,
+            os: getPlatformName(),
+            source: getInstallSource(),
+            storeBuild: isWindowsStore,
+            hwidHash: crypto.createHash('sha256').update(hwid).digest('hex'),
+            activationId: hwid.substring(0, 8).toUpperCase(),
+        };
+    };
+
+    const trackFirstInstall = async () => {
         try {
             const trackingPath = path.join(app.getPath('userData'), '.install_tracked');
             if (fs.existsSync(trackingPath)) return;
 
             const nowIso = new Date().toISOString();
-            const source = isWindowsStore ? 'microsoft_store' : 'direct_website';
-            const osType = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux';
+            const payload = {
+                ...baseTrackingPayload(),
+                event: 'first_install',
+                isGuest: true,
+                timestamp: nowIso,
+                installedAt: nowIso,
+            };
 
-            // 1. Ping mediapp.store analytics
+            let recorded = await sendTrackingPing('download', payload);
+
             try {
-                const https = require('https');
-                https.get(`https://mediapp.store/api/v1/track/download?app=MediScribe&version=${app.getVersion()}&platform=${process.platform}&source=${source}`, () => {}).on('error', () => {});
-            } catch (e) {}
-
-            // 2. Sync to Firebase Firestore
-            try {
-                const admin = require('firebase-admin');
-                let serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
-                if (!serviceAccountPath) {
-                    const rootDir = path.join(__dirname, '..');
-                    const files = fs.readdirSync(rootDir);
-                    const keyFile = files.find(f => f.includes('firebase-adminsdk') && f.endsWith('.json'));
-                    if (keyFile) serviceAccountPath = path.join(rootDir, keyFile);
-                }
-
-                if (serviceAccountPath && fs.existsSync(serviceAccountPath)) {
-                    if (!admin.apps.length) {
-                        admin.initializeApp({
-                            credential: admin.credential.cert(require(path.resolve(serviceAccountPath))),
-                        });
-                    }
-                    const db = admin.firestore();
-
+                const firebase = getFirebaseAdminDb();
+                if (firebase) {
+                    const { admin, db } = firebase;
                     if (isWindowsStore) {
                         await db.collection('app_stats').doc('microsoft_store').set({
                             acquisitions: admin.firestore.FieldValue.increment(1),
@@ -3301,24 +3365,100 @@ app.whenReady().then(() => {
 
                     await db.collection('downloads').add({
                         app: 'mediscribe',
-                        os: osType,
-                        source: source,
+                        os: payload.os,
+                        source: payload.source,
                         isGuest: true,
-                        version: app.getVersion(),
+                        version: payload.version,
+                        platform: payload.platform,
+                        storeBuild: payload.storeBuild,
+                        hwidHash: payload.hwidHash,
+                        activationId: payload.activationId,
+                        timestamp: nowIso,
                         installedAt: nowIso,
                     });
+                    recorded = true;
                 }
             } catch (fsErr) {
-                console.warn('[Telemetry] Firestore download log skipped:', fsErr.message);
+                console.warn('[Telemetry] Firestore install log skipped:', fsErr.message);
+            }
+
+            if (!recorded) {
+                console.warn('[MediScribe] First install tracking not confirmed; will retry on next launch.');
+                return;
             }
 
             try {
-                fs.writeFileSync(trackingPath, JSON.stringify({ recordedAt: nowIso, source, os: osType }));
-                console.log(`[MediScribe] First launch tracked (${source} on ${osType})`);
-            } catch (e) {}
+                fs.writeFileSync(trackingPath, JSON.stringify({ recordedAt: nowIso, source: payload.source, os: payload.os }));
+                console.log(`[MediScribe] First install tracked (${payload.source} on ${payload.os})`);
+            } catch (e) { }
         } catch (e) {}
     };
-    trackDownload();
+
+    const trackAppLaunchEvent = async (info = {}, enrichCurrentLaunch = false) => {
+        try {
+            const nowIso = new Date().toISOString();
+            const email = info.email ? String(info.email).toLowerCase().trim() : null;
+            const payload = {
+                ...baseTrackingPayload(),
+                event: 'app_launch',
+                sessionId: launchSessionId,
+                email,
+                isGuest: !email,
+                isPro: !!info.isPro,
+                plan: info.plan || null,
+                timestamp: nowIso,
+            };
+
+            if (enrichCurrentLaunch && currentLaunchTracked) {
+                const firebase = getFirebaseAdminDb();
+                if (firebase && currentLaunchDocId) {
+                    await firebase.db.collection('app_launches').doc(currentLaunchDocId).set({
+                        email: payload.email,
+                        isGuest: payload.isGuest,
+                        isPro: payload.isPro,
+                        plan: payload.plan,
+                        updatedAt: nowIso,
+                    }, { merge: true });
+                }
+                return { success: true, enriched: true };
+            }
+
+            let recorded = await sendTrackingPing('launch', payload);
+            const firebase = getFirebaseAdminDb();
+            if (firebase) {
+                const docRef = await firebase.db.collection('app_launches').add({
+                    app: 'mediscribe',
+                    os: payload.os,
+                    source: payload.source,
+                    version: payload.version,
+                    platform: payload.platform,
+                    storeBuild: payload.storeBuild,
+                    hwidHash: payload.hwidHash,
+                    activationId: payload.activationId,
+                    sessionId: payload.sessionId,
+                    email: payload.email,
+                    isGuest: payload.isGuest,
+                    isPro: payload.isPro,
+                    plan: payload.plan,
+                    timestamp: nowIso,
+                });
+                currentLaunchDocId = docRef.id;
+                recorded = true;
+            }
+
+            currentLaunchTracked = recorded;
+            if (!recorded) {
+                console.warn('[MediScribe] App launch tracking not confirmed.');
+            }
+            return { success: recorded };
+        } catch (err) {
+            console.warn('[Telemetry] App launch log skipped:', err.message);
+            return { success: false, error: err.message };
+        }
+    };
+
+    trackFirstInstall();
+    trackAppLaunchEvent();
 
     // Check for Updates automatically on startup
     const checkUpdateSilently = async () => {
@@ -3415,6 +3555,10 @@ app.whenReady().then(() => {
             activeUserEmail = null;
         }
         return true;
+    });
+
+    ipcMain.handle('track-app-launch', async (event, info) => {
+        return trackAppLaunchEvent(info || {}, true);
     });
 
     ipcMain.handle('get-activation-id', () => {
@@ -4433,6 +4577,7 @@ app.whenReady().then(() => {
                     github: { windows: 0, mac: 0, linux: 0, total: 0 },
                     website: { windows: 0, mac: 0, linux: 0, guest: 0, loggedIn: 0, total: 0 },
                 },
+                launches: { total: 0, guest: 0, loggedIn: 0 },
                 recentDownloads: [],
             };
 
@@ -4492,7 +4637,7 @@ app.whenReady().then(() => {
                     const downloadCols = ['downloads', 'app_downloads', 'analytics_downloads'];
                     for (const colName of downloadCols) {
                         try {
-                            const snap = await db.collection(colName).limit(200).get();
+                            const snap = await db.collection(colName).get();
                             if (!snap.empty) {
                                 snap.forEach(d => {
                                     const data = d.data() || {};
@@ -4532,15 +4677,43 @@ app.whenReady().then(() => {
                 console.warn('[IPC get-admin-subscribers] Firestore download collection error:', fsErr);
             }
 
-            // Microsoft Store acquisitions tracking
-            let msStoreCount = 16;
+            // Query app launch records. These count everyone who opens the desktop app,
+            // including users who never register or activate a subscription.
+            try {
+                const admin = require('firebase-admin');
+                if (admin.apps && admin.apps.length) {
+                    const db = admin.firestore();
+                    const launchSnap = await db.collection('app_launches').get();
+                    launchSnap.forEach(d => {
+                        const data = d.data() || {};
+                        const isGuest = data.isGuest !== false && !data.email && !data.userEmail && !data.userId;
+                        downloadStats.launches.total++;
+                        if (isGuest) {
+                            downloadStats.launches.guest++;
+                        } else {
+                            downloadStats.launches.loggedIn++;
+                        }
+                    });
+                }
+            } catch (launchErr) {
+                console.warn('[IPC get-admin-subscribers] Firestore launch collection error:', launchErr);
+            }
+
+            // Optional Microsoft Store value if a synced stat exists. Defaults to 0,
+            // because app-direct tracking is the source of truth for opens.
+            let msStoreCount = 0;
             try {
                 const admin = require('firebase-admin');
                 if (admin.apps && admin.apps.length) {
                     const db = admin.firestore();
                     const msSnap = await db.collection('app_stats').doc('microsoft_store').get();
-                    if (msSnap.exists && typeof msSnap.data()?.acquisitions === 'number') {
-                        msStoreCount = msSnap.data().acquisitions;
+                    if (msSnap.exists) {
+                        const msData = msSnap.data() || {};
+                        if (typeof msData.installs === 'number') {
+                            msStoreCount = msData.installs;
+                        } else if (typeof msData.acquisitions === 'number') {
+                            msStoreCount = msData.acquisitions;
+                        }
                     }
                 }
             } catch (msErr) {}

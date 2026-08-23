@@ -280,7 +280,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 </span>
               </h1>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Live aggregated analytics across Razorpay Gateway, Firestore & Microsoft Store / Desktop licenses
+                Live aggregated analytics across payments, registrations and app opens
               </p>
             </div>
           </div>
@@ -431,11 +431,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                     Real-Time Live
                   </span>
                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-violet-500/20 text-violet-300 rounded-full border border-violet-400/30">
-                    MS Store + Web
+                    App Direct
                   </span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  Live real-time aggregation across Microsoft Store, Website Direct & GitHub Releases
+                  Live aggregation from users opening the MediScribe desktop app
                 </p>
               </div>
             </div>
@@ -444,6 +444,10 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <div className="flex items-center gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
                 <span className="text-[11px] font-bold text-slate-300">Total Downloads:</span>
                 <span className="text-lg font-black text-white">{downloadStats.total}</span>
+              </div>
+              <div className="flex items-center gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
+                <span className="text-[11px] font-bold text-slate-300">App Opens:</span>
+                <span className="text-lg font-black text-white">{downloadStats.launches?.total ?? 0}</span>
               </div>
             </div>
           </div>
@@ -465,10 +469,10 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 <span className="text-2xl font-black text-white">{downloadStats.windows}</span>
                 <div className="flex items-center gap-1.5 text-[10px]">
                   <span className="bg-blue-500/20 text-cyan-300 font-bold px-1.5 py-0.5 rounded border border-cyan-400/30">
-                    🛍️ Store: {downloadStats.windowsBreakdown?.msStore ?? 16}
+                    Store: {downloadStats.windowsBreakdown?.msStore ?? 0}
                   </span>
                   <span className="bg-white/10 text-slate-300 font-bold px-1.5 py-0.5 rounded">
-                    EXE: {downloadStats.windowsBreakdown?.directExe ?? 2}
+                    EXE: {downloadStats.windowsBreakdown?.directExe ?? 0}
                   </span>
                 </div>
               </div>
@@ -542,6 +546,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
                 <span className="text-slate-300 font-medium">Logged-In Downloads:</span>
                 <span className="font-bold text-white">{downloadStats.loggedIn}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
+                <span className="h-2 w-2 rounded-full bg-violet-400" />
+                <span className="text-slate-300 font-medium">Anonymous Opens:</span>
+                <span className="font-bold text-white">{downloadStats.launches?.guest ?? 0}</span>
               </div>
             </div>
 

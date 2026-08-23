@@ -58,6 +58,11 @@ export interface DownloadStats {
     msStore?: { total: number };
     website?: { windows: number; mac: number; linux: number; guest: number; loggedIn: number; total: number };
   };
+  launches?: {
+    total: number;
+    guest: number;
+    loggedIn: number;
+  };
   recentDownloads?: Array<{
     os: 'windows' | 'mac' | 'linux';
     isGuest: boolean;

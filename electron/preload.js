@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('electron', {
   getActivationId: () => ipcRenderer.invoke('get-activation-id'),
   activateAfterPayment: (paymentData) => ipcRenderer.invoke('activate-after-payment', paymentData),
   markLicenseMigrated: (claim) => ipcRenderer.invoke('mark-license-migrated', claim),
+  trackAppLaunch: (info) => ipcRenderer.invoke('track-app-launch', info),
   getAdminSubscribers: (adminEmail) => ipcRenderer.invoke('get-admin-subscribers', adminEmail),
   syncAdminSubscriber: (subscriberData) => ipcRenderer.invoke('sync-admin-subscriber', subscriberData),
 

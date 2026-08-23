@@ -47,6 +47,7 @@ declare global {
             formatWithOllama: (text: string, formatType: string) => Promise<string>;
 
             // Utility
+            trackAppLaunch: (info: any) => Promise<{ success: boolean; enriched?: boolean; error?: string }>;
             removeAllListeners: (channel: string) => void;
             platform: string;
             isElectron: boolean;
