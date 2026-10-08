@@ -87,10 +87,12 @@
     "lucide-react": "^0.475.0",
     "next": "^15.5.25",
     "next-themes": "^0.4.0",
+    "png-to-ico": "3.0.2",
     "postcss": "^8.5.28",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "resend": "^6.9.1",
+    "sharp": "0.35.4",
     "tailwind-merge": "^3.0.1",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
@@ -319,7 +321,7 @@
   },
   "overrides": {
     "postcss": "^8.5.28",
-    "sharp": "^0.35.4",
+    "sharp": "0.35.4",
     "gaxios": {
       "uuid": "^11.1.1"
     }

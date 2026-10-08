@@ -74,3 +74,28 @@ test('native asset checksum failure preserves a previous binary and removes part
  await assert.rejects(downloadVerified({url:'https://example.invalid/binary',sha256:'a'.repeat(64)},file,async()=>new Response('corrupt')),/SHA-256/);
  assert.equal(fs.readFileSync(file,'utf8'),'existing');assert.deepEqual(fs.readdirSync(path.dirname(file)),['binary']);
 });
+
+test('runtime copy materializes shared-library links and preserves executable permissions',t=>{
+ const root=temporary(t),src=path.join(root,'source'),dest=path.join(root,'runtime');fs.mkdirSync(src);
+ fs.writeFileSync(path.join(src,'library.so.1'),'runtime',{mode:0o755});fs.symlinkSync('library.so.1',path.join(src,'library.so'));
+ const {copyRuntimeTree,filesUnder}=require('./native-assets');copyRuntimeTree(src,dest);
+ assert.deepEqual(filesUnder(dest).sort(),['library.so','library.so.1']);
+ assert.equal(fs.lstatSync(path.join(dest,'library.so')).isSymbolicLink(),false);
+ assert.equal(fs.readFileSync(path.join(dest,'library.so'),'utf8'),'runtime');
+ assert.ok(fs.statSync(path.join(dest,'library.so')).mode & 0o100);
+});
+test('runtime copy rejects links outside the archive and directory cycles',t=>{
+ const root=temporary(t),src=path.join(root,'source');fs.mkdirSync(src);fs.writeFileSync(path.join(root,'private'),'private');
+ const link=path.join(src,'link');fs.symlinkSync('../private',link);
+ const {copyRuntimeTree}=require('./native-assets');assert.throws(()=>copyRuntimeTree(src,path.join(root,'out')),/escapes/);
+ fs.unlinkSync(link);fs.symlinkSync('.',link);assert.throws(()=>copyRuntimeTree(src,path.join(root,'out')),/cycle/);
+});
+test('native download retries an interrupted transfer and only installs verified content',async t=>{
+ const root=temporary(t),file=path.join(root,'binary');fs.writeFileSync(file,'previous');
+ const {downloadVerified}=require('./native-assets');const sha256=require('crypto').createHash('sha256').update('complete').digest('hex');let attempts=0;
+ await downloadVerified({url:'https://example.invalid/binary',sha256},file,async()=>{
+  attempts++;if(attempts===1)return new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('partial'));controller.error(new TypeError('terminated'));}}));
+  assert.equal(fs.readFileSync(file,'utf8'),'previous');return new Response('complete');
+ });
+ assert.equal(attempts,2);assert.equal(fs.readFileSync(file,'utf8'),'complete');assert.deepEqual(fs.readdirSync(root),['binary']);
+});

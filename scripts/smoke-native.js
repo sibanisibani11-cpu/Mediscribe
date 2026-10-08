@@ -13,7 +13,7 @@ async function freePort() {
 }
 async function waitReady(url, child) {
   for(let i=0;i<120;i++) {
-    if(child.exitCode!==null)throw Error('Native server exited during startup');
+    if(child.exitCode!==null || child.signalCode || child.launchError)throw Error('Native server exited during startup');
     try { const r=await fetch(url,{signal:AbortSignal.timeout(1000)});await r.body?.cancel();if(r.ok)return; } catch {}
     await delay(500);
   }
@@ -44,7 +44,7 @@ async function main() {
       execFileSync(bin('ffmpeg'),['-y','-i',path.join(__dirname,'fixtures','audio-tone.'+extension),'-vn','-sn','-map_metadata','-1','-ar','16000','-ac','1','-c:a','pcm_s16le','-f','wav',output],{stdio:'pipe',timeout:30000});
       assert.ok(fs.statSync(output).size>1000);console.log('PASS: browser audio conversion from '+extension);
     }
-    const launch=(name,args,env={})=>{const fd=fs.openSync(path.join(dir,name+'.log'),'w');const child=spawn(bin(name),args,{env:{...process.env,...env},stdio:['ignore',fd,fd]});fs.closeSync(fd);children.push(child);return child;};
+    const launch=(name,args,env={})=>{const fd=fs.openSync(path.join(dir,name+'.log'),'w');const child=spawn(bin(name),args,{env:{...process.env,...env},stdio:['ignore',fd,fd]});child.on('error',error=>{child.launchError=error;});fs.closeSync(fd);children.push(child);return child;};
     const whisperPort=await freePort();
     const whisper=launch('whisper-server',['-m',path.join(ROOT,'resources/models/ggml-base.en.bin'),'--host','127.0.0.1','--port',String(whisperPort),'-ng']);
     await waitReady(`http://127.0.0.1:${whisperPort}/health`,whisper);
@@ -57,6 +57,12 @@ async function main() {
     assert.ok(fs.existsSync(path.join(t.dir,t.platform==='darwin'?'llama-server':'lib')),'Ollama inference runtime missing');
     console.log('PASS: isolated Ollama server responds and inference runtime is packaged');
     console.log('Native smoke tests passed for '+t.id+'. These do not attest microphone permissions, signed installers, Google sign-in, or LLM generation.');
+  } catch (error) {
+    // These isolated runtimes process only the synthetic/upstream test fixtures.
+    for (const file of fs.readdirSync(dir).filter(name => name.endsWith('.log'))) {
+      console.error(file + ':\n' + fs.readFileSync(path.join(dir,file),'utf8').slice(-8000));
+    }
+    throw error;
   } finally {
     for(const child of children) { child.kill();await Promise.race([new Promise(resolve=>child.once('exit',resolve)),delay(5000)]);if(child.exitCode===null)child.kill('SIGKILL'); }
     fs.rmSync(dir,{recursive:true,force:true});

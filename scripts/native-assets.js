@@ -35,9 +35,10 @@ async function downloadVerified({ url, sha256 }, destination, fetchImpl = fetch)
   if (fs.existsSync(destination) && await digest(destination) === sha256.toLowerCase()) return destination;
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   const temp = `${destination}.${crypto.randomUUID()}.part`;
-  try {
+  for (let attempt = 0; attempt < 3; attempt++) {
+   try {
     const response = await fetchImpl(url, { signal: AbortSignal.timeout(600000) });
-    if (!response.ok || !response.body) throw Error(`Asset download failed: HTTP ${response.status}`);
+    if (!response.ok || !response.body) throw Object.assign(Error(`Asset download failed: HTTP ${response.status}`), { retryable: response.status === 429 || response.status >= 500 });
     if (response.url && new URL(response.url).protocol !== 'https:') throw Error('Insecure download redirect');
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temp, { flags: 'wx', mode: 0o600 }));
     const size = Number(response.headers.get('content-length'));
@@ -45,7 +46,31 @@ async function downloadVerified({ url, sha256 }, destination, fetchImpl = fetch)
     if (await digest(temp) !== sha256.toLowerCase()) throw Error('Asset SHA-256 mismatch');
     fs.renameSync(temp, destination);
     return destination;
-  } finally { fs.rmSync(temp, { force: true }); }
+   } catch (error) {
+    const retryable = error.retryable || error.name === 'TypeError' || error.name === 'TimeoutError' || error.code === 'ECONNRESET';
+    if (!retryable || attempt === 2) throw error;
+    console.warn(`Native download interrupted; retrying (${attempt + 2}/3)`);
+    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+   } finally { fs.rmSync(temp, { force: true }); }
+  }
+}
+
+// Node 22's recursive cpSync may preserve links despite dereference:true.
+// Materialize upstream runtime links as files, confined to the extracted archive.
+function copyRuntimeTree(source, destination, archiveRoot = source, ancestors = new Set()) {
+  const root = fs.realpathSync(archiveRoot), real = fs.realpathSync(source);
+  if (real !== root && !real.startsWith(root + path.sep)) throw Error('Runtime link escapes the archive');
+  if (ancestors.has(real)) throw Error('Runtime link cycle');
+  if (fs.existsSync(destination) && fs.lstatSync(destination).isSymbolicLink()) fs.unlinkSync(destination);
+  const stat = fs.statSync(real);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(destination, { recursive: true });
+    const next = new Set(ancestors).add(real);
+    for (const entry of fs.readdirSync(real)) copyRuntimeTree(path.join(real, entry), path.join(destination, entry), root, next);
+  } else if (stat.isFile()) {
+    fs.copyFileSync(real, destination);
+    fs.chmodSync(destination, stat.mode & 0o777);
+  } else throw Error('Unsupported runtime file type');
 }
 function binaryArchitectures(file) {
   const fd = fs.openSync(file, 'r');
@@ -121,4 +146,4 @@ async function bundleArchive(name, t, source, extension, install) {
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 }
 function run(main) { main().catch(error => { console.error(error.message); process.exitCode = 1; }); }
-module.exports = { ROOT, target, digest, asset, downloadVerified, binaryArchitectures, assertArchitecture, filesUnder, extract, recordAsset, cacheValid, bundleArchive, run };
+module.exports = { ROOT, target, digest, asset, downloadVerified, copyRuntimeTree, binaryArchitectures, assertArchitecture, filesUnder, extract, recordAsset, cacheValid, bundleArchive, run };

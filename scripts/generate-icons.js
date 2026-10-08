@@ -11,7 +11,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 // In CI, icons are generated in a dedicated job and passed as artifacts.
 // The prebuild step sets SKIP_ICON_GENERATION=true to avoid overwriting them.
@@ -35,19 +34,7 @@ if (!fs.existsSync(BUILD_DIR)) {
     fs.mkdirSync(BUILD_DIR, { recursive: true });
 }
 
-// ── Install png-to-ico if needed ────────────────────────────────────────────
-function ensurePackage(pkg) {
-    try {
-        require.resolve(pkg);
-    } catch {
-        console.log(`📦  Installing ${pkg}...`);
-        execSync(`npm install --no-save ${pkg}`, { cwd: ROOT, stdio: 'inherit' });
-    }
-}
-
-ensurePackage('png-to-ico');
-ensurePackage('sharp');
-
+// Build dependencies are installed from package-lock.json by npm ci.
 const sharp = require('sharp');
 // png-to-ico may export as module.exports directly or via .default
 const pngToIcoRaw = require('png-to-ico');
