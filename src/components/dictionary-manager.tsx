@@ -1,6 +1,8 @@
 "use client";
+import { auth } from "../lib/firebase";
+import { readAccountLibrary, writeAccountLibrary } from "../lib/account-storage";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Book, Loader2, SortAsc, Check, X, Edit2, Cloud, RefreshCw, ChevronDown, CloudUpload, CloudDownload } from "lucide-react";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -27,17 +29,17 @@ export function DictionaryManager() {
     });
     const { toast } = useToast();
 
+    const ownerUid = useRef<string | undefined>(auth?.currentUser?.uid).current;
     const STORAGE_KEY = "mediscribe_dictionary";
 
     const loadLocalDictionary = (): string[] => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
-        } catch { return []; }
+            return readAccountLibrary(STORAGE_KEY, ownerUid);
+        } catch (error) { toast({ variant: "destructive", title: "Library could not be loaded", description: error instanceof Error ? error.message : "Saved data has been preserved." }); return []; }
     };
 
     const saveLocalDictionary = (d: string[]) => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+        writeAccountLibrary(STORAGE_KEY, ownerUid, d);
     };
 
     useEffect(() => {
@@ -51,7 +53,15 @@ export function DictionaryManager() {
             setDictionary(loadLocalDictionary());
             setLoading(false);
         }
+        if (isElectron) return (window.electron as any).onLibrariesChanged?.(() => { fetchDictionary(); });
     }, [isElectron]);
+
+    const importLegacy = async () => {
+        try {
+            const result = await (window.electron as any).importLegacyLibraries();
+            if (result.success) { await fetchDictionary(); toast({ title: 'Libraries imported' }); }
+        } catch (error) { toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'Original files are preserved.' }); }
+    };
 
     const handleLogin = async () => {
         if (!isElectron || !(window as any).electron?.googleLogin) return;
@@ -161,8 +171,8 @@ export function DictionaryManager() {
                 const uniqueNewWords = wordsToAdd.filter(w => !dictionary.includes(w));
                 if (uniqueNewWords.length > 0) {
                     const next = [...dictionary, ...uniqueNewWords];
-                    setDictionary(next);
                     saveLocalDictionary(next);
+                    setDictionary(next);
                     setNewWord("");
                     const wordMsg = uniqueNewWords.length > 1
                         ? `${uniqueNewWords.length} words added`
@@ -209,8 +219,8 @@ export function DictionaryManager() {
                 }
             } else {
                 const next = dictionary.filter(w => w !== word);
-                setDictionary(next);
                 saveLocalDictionary(next);
+                setDictionary(next);
                 setSelectedWords(prev => {
                     const next = new Set(prev);
                     next.delete(word);
@@ -243,8 +253,8 @@ export function DictionaryManager() {
                 }
             } else {
                 const next = dictionary.filter(w => !selectedWords.has(w));
-                setDictionary(next);
                 saveLocalDictionary(next);
+                setDictionary(next);
                 setSelectedWords(new Set());
                 toast({
                     title: "Bulk Deletion Successful",
@@ -311,8 +321,8 @@ export function DictionaryManager() {
                 }
             } else {
                 const next = dictionary.map(w => w === editingWord ? editValue.trim() : w);
-                setDictionary(next);
                 saveLocalDictionary(next);
+                setDictionary(next);
                 setEditingWord(null);
                 toast({
                     title: "Word Updated",
@@ -337,8 +347,8 @@ export function DictionaryManager() {
                 }
             } else {
                 const next = [...dictionary].sort((a, b) => a.localeCompare(b));
-                setDictionary(next);
                 saveLocalDictionary(next);
+                setDictionary(next);
                 toast({
                     title: "Sorted",
                     description: "Dictionary sorted alphabetically.",
@@ -359,6 +369,7 @@ export function DictionaryManager() {
 
     return (
         <div className="flex flex-col gap-6 p-1 h-full min-h-[500px]">
+            {isElectron && <Button variant="outline" onClick={importLegacy}>Import libraries from the older app</Button>}
             {/* Add Section */}
             <div className="flex flex-col gap-3 glass-card p-4 rounded-xl border-blue-100/50 dark:border-blue-900/20">
                 <div className="flex items-center justify-between mb-1">

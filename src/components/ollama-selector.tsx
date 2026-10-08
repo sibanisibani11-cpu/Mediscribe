@@ -135,9 +135,10 @@ export function OllamaSelector({ className, enabled, onEnabledChange }: OllamaSe
             });
         };
 
-        (window.electron as any).onOllamaDownloadProgress(handleProgress);
-        (window.electron as any).onOllamaDownloadComplete(handleComplete);
-        (window.electron as any).onOllamaDownloadError(handleError);
+        const removeProgress = (window.electron as any).onOllamaDownloadProgress(handleProgress);
+        const removeComplete = (window.electron as any).onOllamaDownloadComplete(handleComplete);
+        const removeError = (window.electron as any).onOllamaDownloadError(handleError);
+        return () => { removeProgress?.(); removeComplete?.(); removeError?.(); };
     }, [isElectron, toast, fetchModels]);
 
     const handleCancel = async (modelName: string, e?: React.MouseEvent) => {

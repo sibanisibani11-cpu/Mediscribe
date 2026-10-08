@@ -1,0 +1,6 @@
+{
+  "backendUrl": "https://mediscribeapi-nmnwspke5q-uc.a.run.app",
+  "entitlementPublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEArdeh35Qq0Kjzu+7cX3FVSthhcuVOqsdcXjdoYsAF26E=\n-----END PUBLIC KEY-----\n",
+  "googleClientId": "",
+  "googleDesktopClientSecret": ""
+}

@@ -1,398 +1,107 @@
+'use strict';
 const { google } = require('googleapis');
-const { BrowserWindow, shell } = require('electron');
+const { BrowserWindow, shell, app, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const app = require('electron').app;
 const http = require('http');
-const url = require('url');
-
-const GOOGLE_REDIRECT_URI = 'http://localhost:11435/callback'; // A port unlikely to be used
-
-// Credentials are read lazily so that dotenv has time to populate process.env before
-// the OAuth client is constructed.  (In packaged Windows builds the .env is loaded
-// via a multi-path search in main.js; reading the values here at module-load time
-// would capture empty strings before that search completes.)
-let _oauth2Client = null;
-
+const crypto = require('crypto');
+const config = require('./public-config.json');
+let client;
+let activeFlow = false;
 function getOAuth2Client() {
-    const clientId     = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-    // Re-create the client if the credentials have changed (or first call)
-    if (
-        !_oauth2Client ||
-        _oauth2Client._clientId     !== clientId ||
-        _oauth2Client._clientSecret !== clientSecret
-    ) {
-        _oauth2Client = new google.auth.OAuth2(clientId, clientSecret, GOOGLE_REDIRECT_URI);
-        // Attach the values so we can compare them on the next call
-        _oauth2Client._clientId     = clientId;
-        _oauth2Client._clientSecret = clientSecret;
-        // Re-attach token listener whenever we recreate the client
-        isTokenListenerSet = false;
-    }
-
-    return _oauth2Client;
-}
-
-// Expose a proxy so existing code that references `oauth2Client` still works
-const oauth2Client = new Proxy({}, {
-    get(_, prop) { return getOAuth2Client()[prop]; },
-    set(_, prop, value) { getOAuth2Client()[prop] = value; return true; },
-    apply(_, thisArg, args) { return getOAuth2Client()(...args); }
-});
-
-const SCOPES = [
-  'openid',
-  'profile',
-  'https://www.googleapis.com/auth/drive.appdata',
-  'https://www.googleapis.com/auth/userinfo.email'
-];
-
-function getTokenFilePath() {
-  return path.join(app.getPath('userData'), 'google-token.json');
-}
-
-function saveToken(token) {
-  try {
-    const tokenPath = getTokenFilePath();
-    fs.writeFileSync(tokenPath, JSON.stringify(token, null, 2));
-    oauth2Client.setCredentials(token);
-  } catch (e) {
-    console.error('Failed to save token:', e);
+  if (!client) {
+    client = new google.auth.OAuth2(config.googleClientId, config.googleDesktopClientSecret);
+    client.on('tokens', tokens => {
+      try { saveToken({ ...(getToken() || {}), ...tokens }); } catch { console.error('[OAuth] Could not persist refreshed session'); }
+    });
   }
+  return client;
 }
-
+const oauth2Client = new Proxy({}, { get(_, prop) { const target = getOAuth2Client(); const value = target[prop]; return typeof value === 'function' ? value.bind(target) : value; } });
+const SCOPES = ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive.appdata'];
+function tokenFile() { return path.join(app.getPath('userData'), 'google-token.encrypted'); }
+function canEncrypt() { return safeStorage.isEncryptionAvailable() && (!safeStorage.getSelectedStorageBackend || safeStorage.getSelectedStorageBackend() !== 'basic_text'); }
+function saveToken(token) {
+  if (!canEncrypt()) throw new Error('Secure credential storage is unavailable. Configure your operating system keyring.');
+  fs.writeFileSync(tokenFile(), safeStorage.encryptString(JSON.stringify(token)), { mode: 0o600 });
+  getOAuth2Client().setCredentials(token);
+  const old = path.join(app.getPath('userData'), 'google-token.json');
+  if (fs.existsSync(old)) fs.unlinkSync(old);
+}
 function getToken() {
   try {
-    const tokenPath = getTokenFilePath();
-    if (fs.existsSync(tokenPath)) {
-      const token = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
-      oauth2Client.setCredentials(token);
-      return token;
-    }
-  } catch (e) {
-    console.error('Failed to get token:', e);
-  }
-  return null;
+    if (!canEncrypt() || !fs.existsSync(tokenFile())) return null;
+    const token = JSON.parse(safeStorage.decryptString(fs.readFileSync(tokenFile())));
+    getOAuth2Client().setCredentials(token);
+    return token;
+  } catch { return null; }
 }
-
-/**
- * On Microsoft Store (AppX/MSIX) builds, the app runs inside an AppContainer sandbox
- * which blocks loopback (localhost) connections by default.
- * This function grants the exemption so our OAuth redirect server can work.
- * It is a no-op on non-Windows and non-Store builds.
- */
-function ensureLoopbackExemption() {
-  if (process.platform !== 'win32') return;
-  if (!process.windowsStore) return; // only AppX/MSIX — skip for NSIS/portable
-
-  try {
-    const { execSync } = require('child_process');
-    // Get the package SID for this AppContainer
-    const result = execSync(
-      'CheckNetIsolation.exe LoopbackExempt -s',
-      { encoding: 'utf8', timeout: 5000 }
-    );
-    // Check if already exempted (package family name contains our appId)
-    if (result.toLowerCase().includes('mediapp') || result.toLowerCase().includes('mediscribe')) {
-      console.log('[OAuth] AppX loopback exemption already active.');
-      return;
-    }
-    // Add the exemption (requires the app to be installed, which it will be from the Store)
-    execSync(
-      'CheckNetIsolation.exe LoopbackExempt -a -n="mediapp.MediScribe_*"',
-      { encoding: 'utf8', timeout: 5000 }
-    );
-    console.log('[OAuth] AppX loopback exemption granted successfully.');
-  } catch (e) {
-    // Non-fatal: the OAuth server may still work if exemption was previously granted,
-    // or if Windows grants it automatically for Electron apps in newer builds.
-    console.warn('[OAuth] Could not set AppX loopback exemption (may still work):', e.message);
-  }
-}
-
-/**
- * Handle OAuth flow by starting a temporary local server
- */
 async function authenticateWithGoogle() {
-  const clientId     = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-
-  if (!clientId || clientId.includes('YOUR_CLIENT_ID') || !clientSecret || clientSecret.includes('YOUR_CLIENT_SECRET')) {
-    throw new Error('Google Cloud Sync credentials (Client ID/Secret) are missing or not configured in your .env file.');
-  }
-
-  // Ensure localhost is accessible inside AppX/MSIX sandbox (no-op outside Store)
-  ensureLoopbackExemption();
-
+  if (!config.googleClientId) throw new Error('Google desktop sign-in is not configured. Use email sign-in or contact support.');
+  if (!canEncrypt()) throw new Error('Secure credential storage is unavailable.');
+  if (activeFlow) throw new Error('A Google sign-in is already in progress.');
+  activeFlow = true;
+  const state = crypto.randomBytes(32).toString('base64url');
+  const verifier = crypto.randomBytes(48).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   return new Promise((resolve, reject) => {
-    let authWindow = null;
-    let resolved = false;
-
+    let settled = false, exchanging = false, authWindow, redirectUri;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true; activeFlow = false; clearTimeout(timer); server.close();
+      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+      error ? reject(error) : resolve(result);
+    };
     const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      if (req.method !== 'GET' || url.pathname !== '/callback') { res.writeHead(404); return res.end('Not found'); }
+      if (url.searchParams.get('state') !== state) { res.writeHead(400); return res.end('Invalid sign-in state'); }
+      if (settled || exchanging) { res.writeHead(409); return res.end('Sign-in already handled'); }
+      if (url.searchParams.has('error')) { res.writeHead(400); res.end('Sign-in cancelled'); return finish(new Error('Google sign-in was cancelled.')); }
+      const code = url.searchParams.get('code');
+      if (!code) { res.writeHead(400); return res.end('Missing authorization code'); }
+      exchanging = true;
       try {
-        if (req.url.indexOf('/callback') > -1) {
-          const qs = new url.URL(req.url, 'http://localhost:11435').searchParams;
-          const code = qs.get('code');
-
-          res.setHeader('Content-Type', 'text/html');
-          res.end(`
-            <html>
-              <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 50px; background-color: #0f172a; color: #f8fafc;">
-                <div style="max-width: 400px; margin: 0 auto; padding: 30px; background: rgba(30, 41, 59, 0.5); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-                  <h1 style="color: #a78bfa; font-size: 24px; margin-bottom: 10px;">Authentication Successful!</h1>
-                  <p style="color: #94a3b8; font-size: 15px; line-height: 1.5;">You have successfully logged in to MediScribe.</p>
-                  <p style="color: #64748b; font-size: 13px; margin-top: 20px;">You can close this tab and return to the application.</p>
-                </div>
-                <script>
-                  setTimeout(() => {
-                    try { window.close(); } catch (e) {}
-                  }, 1500);
-                </script>
-              </body>
-            </html>
-          `);
-
-          server.close();
-
-          const { tokens } = await oauth2Client.getToken(code);
-          oauth2Client.setCredentials(tokens);
-
-          // Fetch user email
-          const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-          const userInfo = await oauth2.userinfo.get();
-
-          tokens.email = userInfo.data.email;
-          saveToken(tokens);
-
-          resolved = true;
-          if (authWindow && !authWindow.isDestroyed()) {
-            authWindow.close();
-          }
-          resolve({ success: true, tokens, email: userInfo.data.email });
-        }
-      } catch (e) {
-        res.setHeader('Content-Type', 'text/html');
-        res.end(`
-          <html>
-            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding-top: 50px; background-color: #0f172a; color: #f8fafc;">
-              <div style="max-width: 400px; margin: 0 auto; padding: 30px; background: rgba(30, 41, 59, 0.5); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
-                <h1 style="color: #ef4444; font-size: 24px; margin-bottom: 10px;">Authentication Failed</h1>
-                <p style="color: #94a3b8; font-size: 15px; line-height: 1.5;">An error occurred during authentication. Please try again.</p>
-              </div>
-            </body>
-          </html>
-        `);
-        server.close();
-        if (authWindow && !authWindow.isDestroyed()) {
-          authWindow.close();
-        }
-        reject(e);
+        const oauth = getOAuth2Client();
+        const { tokens } = await oauth.getToken({ code, codeVerifier: verifier, redirect_uri: redirectUri });
+        const ticket = await oauth.verifyIdToken({ idToken: tokens.id_token, audience: config.googleClientId });
+        const identity = ticket.getPayload();
+        if (!identity?.email || !identity.email_verified) throw new Error('Google account email could not be verified.');
+        if (settled) { res.writeHead(408); return res.end('Sign-in expired'); }
+        tokens.email = identity.email;
+        saveToken(tokens);
+        res.end('Sign-in completed. Return to MediScribe.');
+        finish(null, { success: true, tokens: { id_token: tokens.id_token }, email: identity.email });
+      } catch {
+        if (!res.writableEnded) { res.writeHead(400); res.end('Sign-in failed. Return to MediScribe and try again.'); }
+        finish(new Error('Google sign-in failed. Please retry.'));
       }
-    }).listen(11435, async () => {
-      const authorizeUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline',
-        scope: SCOPES,
-        prompt: 'consent'
-      });
-
-      // Open standard system browser
+    });
+    const timer = setTimeout(() => finish(new Error('Google sign-in timed out. Please retry.')), 180000);
+    server.on('error', () => finish(new Error('Could not start the local sign-in callback.')));
+    server.listen(0, '127.0.0.1', async () => {
+      redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+      const authorizeUrl = getOAuth2Client().generateAuthUrl({ redirect_uri: redirectUri, access_type: 'offline', scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'consent' });
       try {
+        authWindow = new BrowserWindow({ width: 440, height: 220, title: 'Google sign-in', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+        authWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+        authWindow.webContents.on('will-navigate', event => event.preventDefault());
+        await authWindow.loadURL('data:text/html,' + encodeURIComponent('<h2>Complete sign-in in your browser</h2><p>Close this window to cancel.</p>'));
+        authWindow.on('closed', () => finish(new Error('Google sign-in cancelled.')));
         await shell.openExternal(authorizeUrl);
-      } catch (err) {
-        console.error('Failed to open external browser:', err);
-      }
-
-      // Create a status/fallback window
-      authWindow = new BrowserWindow({
-        width: 450,
-        height: 420,
-        resizable: false,
-        minimizable: false,
-        maximizable: false,
-        alwaysOnTop: true,
-        title: 'MediScribe Secure Sign-In',
-        autoHideMenuBar: true,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true
-        }
-      });
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Google Sign-In</title>
-          <style>
-            body {
-              margin: 0;
-              padding: 0;
-              background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-              color: #f8fafc;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: center;
-              min-height: 100vh;
-              overflow: hidden;
-              text-align: center;
-            }
-            .card {
-              background: rgba(15, 23, 42, 0.6);
-              backdrop-filter: blur(12px);
-              border: 1px solid rgba(255, 255, 255, 0.15);
-              border-radius: 24px;
-              padding: 32px;
-              max-width: 360px;
-              width: 85%;
-              box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
-              animation: fadeIn 0.5s ease-out;
-            }
-            @keyframes fadeIn {
-              from { opacity: 0; transform: translateY(15px); }
-              to { opacity: 1; transform: translateY(0); }
-            }
-            .logo {
-              font-size: 26px;
-              font-weight: 800;
-              background: linear-gradient(135deg, #a78bfa 0%, #c084fc 100%);
-              -webkit-background-clip: text;
-              -webkit-text-fill-color: transparent;
-              margin-bottom: 24px;
-              letter-spacing: -0.5px;
-            }
-            h2 {
-              font-size: 18px;
-              margin: 0 0 12px 0;
-              font-weight: 600;
-              color: #f1f5f9;
-            }
-            p {
-              font-size: 13px;
-              color: #94a3b8;
-              line-height: 1.6;
-              margin: 0 0 20px 0;
-            }
-            .spinner {
-              border: 3px solid rgba(255, 255, 255, 0.08);
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              border-left-color: #c084fc;
-              animation: spin 1s linear infinite;
-              margin: 0 auto 20px auto;
-            }
-            @keyframes spin {
-              0% { transform: rotate(0deg); }
-              100% { transform: rotate(360deg); }
-            }
-            .btn {
-              display: inline-block;
-              background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-              color: white;
-              border: none;
-              padding: 11px 22px;
-              font-size: 13px;
-              font-weight: 600;
-              border-radius: 12px;
-              cursor: pointer;
-              transition: all 0.2s ease;
-              text-decoration: none;
-              box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
-            }
-            .btn:hover {
-              transform: translateY(-1px);
-              box-shadow: 0 8px 16px rgba(124, 58, 237, 0.35);
-              background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-            }
-            .btn:active {
-              transform: translateY(0);
-            }
-            .footer {
-              margin-top: 24px;
-              font-size: 11px;
-              color: #64748b;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="logo">MediScribe</div>
-            <div class="spinner"></div>
-            <h2>Secure Authentication</h2>
-            <p>We have opened Google Sign-In in your system web browser to complete authentication securely.</p>
-            <p style="font-size: 12px; margin-bottom: 16px; color: #64748b;">If the page did not load, please click the button below:</p>
-            <a href="https://open-browser/" class="btn">Open in Browser</a>
-            <div class="footer">
-              You can close this window to cancel the login.
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-
-      authWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent));
-
-      authWindow.webContents.on('will-navigate', (event, url) => {
-        event.preventDefault();
-        shell.openExternal(authorizeUrl);
-      });
-
-      authWindow.on('closed', () => {
-        server.close();
-        if (!resolved) {
-          reject(new Error('Authentication window was closed.'));
-        }
-      });
+      } catch { finish(new Error('Could not open Google sign-in.')); }
     });
   });
 }
-
-// Flag to ensure token listener is only added once
-let isTokenListenerSet = false;
-
-/**
- * Get an authorized drive client
- */
 async function getDriveClient() {
-  const token = getToken();
-  if (!token) return null;
-
-  // Refresh token if needed - only set listener once
-  if (!isTokenListenerSet) {
-    oauth2Client.on('tokens', (tokens) => {
-      console.log('[OAuth] Token refreshed automatically');
-      const currentToken = getToken() || {};
-      saveToken(Object.assign({}, currentToken, tokens));
-    });
-    isTokenListenerSet = true;
-  }
-
-  return google.drive({ version: 'v3', auth: oauth2Client });
+  if (!getToken()) return null;
+  return google.drive({ version: 'v3', auth: getOAuth2Client() });
 }
-
 function logoutGoogle() {
-  try {
-    const tokenPath = getTokenFilePath();
-    if (fs.existsSync(tokenPath)) {
-      fs.unlinkSync(tokenPath);
-    }
-    oauth2Client.setCredentials(null);
-    return true;
-  } catch (e) {
-    console.error('Failed to logout Google:', e);
-    return false;
-  }
+  for (const file of [tokenFile(), path.join(app.getPath('userData'), 'google-token.json')]) if (fs.existsSync(file)) fs.unlinkSync(file);
+  getOAuth2Client().setCredentials({});
+  return true;
 }
-
-module.exports = {
-  authenticateWithGoogle,
-  getDriveClient,
-  oauth2Client,
-  getToken,
-  saveToken,
-  logoutGoogle
-};
+module.exports = { authenticateWithGoogle, getDriveClient, oauth2Client, getToken, saveToken, logoutGoogle };

@@ -1,231 +1,38 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-
-const RESOURCES_DIR = path.join(__dirname, '../resources/bin');
-const TEMP_DIR = path.join(__dirname, '../temp_whisper');
-
-// URLs for whisper-server binaries (whisper.cpp v1.8.2)
-const URLS = {
-    win32: 'https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.2/whisper-bin-x64.zip',
-    linux: 'https://github.com/ggerganov/whisper.cpp/releases/download/v1.7.1/whisper-bin-v1.7.1-linux-intel.zip',
-    // Mac binary is handled manually as it's not available as a simple standalone zip in v1.8.2
-    darwin: null
-};
-
-function removeDirSync(dirPath) {
-    if (fs.existsSync(dirPath)) {
-        fs.rmSync(dirPath, { recursive: true, force: true });
-    }
-}
-
-async function bundleWhisper() {
-    console.log('📦 Bundling Whisper Server...');
-
-    // Ensure resources directory exists
-    if (!fs.existsSync(RESOURCES_DIR)) {
-        fs.mkdirSync(RESOURCES_DIR, { recursive: true });
-    }
-
-    let platforms = ['darwin', 'win32', 'linux'];
-    if (process.env.TARGET_PLATFORM) {
-        platforms = [process.env.TARGET_PLATFORM];
-    } else if (process.platform === 'darwin') {
-        platforms = ['darwin'];
-    } else if (process.platform === 'linux') {
-        platforms = ['linux'];
-    }
-
-    for (const platform of platforms) {
-        console.log(`\n--- Bundling for ${platform} ---`);
-
-        if (platform === 'darwin') {
-            const macBinary = path.join(RESOURCES_DIR, 'whisper-server');
-            if (fs.existsSync(macBinary)) {
-                console.log('✅ Whisper Server for Mac already exists.');
-                try {
-                    execSync(`chmod +x "${macBinary}"`);
-                    console.log('   Permissions updated (chmod +x).');
-                } catch (e) {
-                    console.warn(`   Could not set permissions: ${e.message}`);
-                }
-            } else {
-                console.log('⚠️  Whisper Server for Mac NOT found at resources/bin/whisper-server');
-                console.log('   Attempting to compile whisper.cpp from source (v1.8.2)...');
-
-                if (!fs.existsSync(TEMP_DIR)) {
-                    fs.mkdirSync(TEMP_DIR, { recursive: true });
-                }
-
-                const sourceUrl = 'https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.8.2.tar.gz';
-                const archivePath = path.join(TEMP_DIR, 'whisper-source.tar.gz');
-                const extractedDir = path.join(TEMP_DIR, 'source');
-
-                if (!fs.existsSync(extractedDir)) {
-                    fs.mkdirSync(extractedDir, { recursive: true });
-                }
-
-                try {
-                    console.log('⬇️  Downloading whisper.cpp source...');
-                    execSync(`curl -L -o "${archivePath}" "${sourceUrl}"`, { stdio: 'inherit' });
-
-                    console.log('📦 Extracting source...');
-                    execSync(`tar -xf "${archivePath}" -C "${extractedDir}" --strip-components=1`, { stdio: 'inherit' });
-
-                    console.log('🛠️  Configuring CMake (Universal Binary: x86_64 + arm64)...');
-                    execSync(`cmake -B "${extractedDir}/build" -S "${extractedDir}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DGGML_METAL_EMBED_LIBRARY=ON -DBUILD_SHARED_LIBS=OFF`, { stdio: 'inherit' });
-
-                    console.log('🔨 Compiling whisper-server target...');
-                    execSync(`cmake --build "${extractedDir}/build" --config Release --target whisper-server -j 4`, { stdio: 'inherit' });
-
-                    // Find where the binary was generated
-                    const possiblePaths = [
-                        path.join(extractedDir, 'build/bin/whisper-server'),
-                        path.join(extractedDir, 'build/bin/server'),
-                        path.join(extractedDir, 'build/examples/server/whisper-server'),
-                        path.join(extractedDir, 'build/examples/server/server')
-                    ];
-
-                    let foundBinary = null;
-                    for (const p of possiblePaths) {
-                        if (fs.existsSync(p)) {
-                            foundBinary = p;
-                            break;
-                        }
-                    }
-
-                    if (!foundBinary) {
-                        // Fallback: search recursively in the build folder
-                        try {
-                            const findRes = execSync(`find "${extractedDir}/build" -type f -name "whisper-server" -o -name "server"`).toString().trim().split('\n')[0];
-                            if (findRes && fs.existsSync(findRes)) {
-                                foundBinary = findRes;
-                            }
-                        } catch (e) {}
-                    }
-
-                    if (foundBinary) {
-                        fs.copyFileSync(foundBinary, macBinary);
-                        execSync(`chmod +x "${macBinary}"`);
-                        console.log('✅ Whisper Server for Mac compiled and installed successfully!');
-                    } else {
-                        throw new Error('Could not locate the compiled whisper-server binary in build directory.');
-                    }
-
-                } catch (e) {
-                    console.error('❌ Failed to compile whisper-server for Mac:', e.message);
-                    console.warn('   Ensure Xcode Command Line Tools and CMake are installed.');
-                } finally {
-                    removeDirSync(TEMP_DIR);
-                }
-            }
-            continue;
-        }
-
-        const url = URLS[platform];
-        if (!url) {
-            console.log(`ℹ️  No URL defined for ${platform}, skipping.`);
-            continue;
-        }
-
-        // Check if Windows binary already exists and validate it
-        // Note: whisper-server.exe is a thin loader (~700KB) — the heavy lifting is in the DLLs
-        if (platform === 'win32') {
-            const exePath = path.join(RESOURCES_DIR, 'whisper-server.exe');
-            if (fs.existsSync(exePath) && fs.statSync(exePath).size > 500000) {
-                console.log('\u2705 whisper-server.exe already exists and looks valid, skipping download.');
-                continue;
-            } else if (fs.existsSync(exePath)) {
-                console.log(`\u26a0\ufe0f  whisper-server.exe exists but is suspiciously small (${fs.statSync(exePath).size} bytes) - re-downloading.`);
-            }
-        }
-
-        if (!fs.existsSync(TEMP_DIR)) {
-            fs.mkdirSync(TEMP_DIR, { recursive: true });
-        }
-
-        const archiveName = `whisper-${platform}.zip`;
-        const archivePath = path.join(TEMP_DIR, archiveName);
-
-        console.log(`⬇️  Downloading ${archiveName}...`);
-        try {
-            execSync(`curl -L -o "${archivePath}" "${url}"`, { stdio: 'inherit' });
-        } catch (e) {
-            console.error(`❌ Download failed for ${platform}:`, e.message);
-            removeDirSync(TEMP_DIR);
-            continue;
-        }
-
-        const extractedDir = path.join(TEMP_DIR, 'extracted');
-        if (!fs.existsSync(extractedDir)) {
-            fs.mkdirSync(extractedDir, { recursive: true });
-        }
-
-        try {
-            // Extract: use unzip on Linux, PowerShell on Windows, tar on macOS
-            // Note: GNU tar (Git for Windows) misinterprets D:\ paths as remote hosts
-            if (process.platform === 'linux') {
-                execSync(`unzip -o "${archivePath}" -d "${extractedDir}"`, { stdio: 'inherit' });
-            } else if (process.platform === 'win32') {
-                execSync(`powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '${archivePath}' -DestinationPath '${extractedDir}'"`, { stdio: 'inherit' });
-            } else {
-                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
-            }
-        } catch (e) {
-            console.error(`❌ Extraction failed for ${platform}:`, e.message);
-            removeDirSync(TEMP_DIR);
-            continue;
-        }
-
-        try {
-            if (platform === 'win32') {
-                // Copy whisper-server.exe and required DLLs from Release/
-                const filesToCopy = [
-                    { from: 'Release/whisper-server.exe', to: 'whisper-server.exe' },
-                    { from: 'Release/ggml.dll', to: 'ggml.dll' },
-                    { from: 'Release/ggml-base.dll', to: 'ggml-base.dll' },
-                    { from: 'Release/ggml-cpu.dll', to: 'ggml-cpu.dll' },
-                    { from: 'Release/whisper.dll', to: 'whisper.dll' },
-                    { from: 'Release/SDL2.dll', to: 'SDL2.dll' }
-                ];
-
-                for (const { from, to } of filesToCopy) {
-                    const src = path.join(extractedDir, from);
-                    const dst = path.join(RESOURCES_DIR, to);
-                    if (fs.existsSync(src)) {
-                        fs.copyFileSync(src, dst);
-                    } else {
-                        console.warn(`⚠️  Could not find ${from} in extracted archive`);
-                    }
-                }
-
-                // Validate the downloaded binary size
-                const exePath = path.join(RESOURCES_DIR, 'whisper-server.exe');
-                if (fs.existsSync(exePath)) {
-                    const size = fs.statSync(exePath).size;
-                    console.log(`   whisper-server.exe size: ${(size / 1024).toFixed(0)} KB`);
-                    if (size < 200000) {
-                        console.warn('⚠️  whisper-server.exe seems too small - check the archive contents.');
-                    }
-                }
-            } else if (platform === 'linux') {
-                // Linux: find whisper-server in extracted directory
-                const findResult = execSync(`find "${extractedDir}" -name "whisper-server" -type f`).toString().trim();
-                if (findResult) {
-                    fs.copyFileSync(findResult, path.join(RESOURCES_DIR, 'whisper-server'));
-                    execSync(`chmod +x "${path.join(RESOURCES_DIR, 'whisper-server')}"`);
-                } else {
-                    console.warn(`⚠️  Could not find whisper-server in ${archiveName}`);
-                }
-            }
-            console.log(`✅ Whisper Server for ${platform} bundled successfully to ${RESOURCES_DIR}`);
-        } catch (e) {
-            console.error(`❌ Extraction failed for ${platform}:`, e.message);
-        } finally {
-            // Cleanup temp
-            removeDirSync(TEMP_DIR);
-        }
-    }
-}
-
-bundleWhisper();
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const { target, asset, bundleArchive, assertArchitecture, filesUnder, run } = require('./native-assets');
+run(async () => {
+  const t = target(); if (!t) return;
+  if (t.platform === 'win32') {
+    const pin = asset('whisper', t.id, 'https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.2/whisper-bin-x64.zip');
+    await bundleArchive('whisper', t, pin, 'zip', async dir => {
+      const source = path.join(dir, 'Release');
+      const files = ['whisper-server.exe', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll', 'whisper.dll'];
+      for (const file of files) {
+        assertArchitecture(path.join(source, file), t);
+        fs.copyFileSync(path.join(source, file), path.join(t.dir, file));
+      }
+      if (fs.existsSync(path.join(source, 'SDL2.dll'))) { fs.copyFileSync(path.join(source, 'SDL2.dll'), path.join(t.dir, 'SDL2.dll')); files.push('SDL2.dll'); }
+      return files;
+    });
+  } else {
+    if (process.platform !== t.platform) throw Error('Whisper source builds require the target OS');
+    const pin = asset('whisper_source', 'all', 'https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.8.2.tar.gz');
+    await bundleArchive('whisper', t, pin, 'tar.gz', async dir => {
+      const source = path.join(dir, 'whisper.cpp-1.8.2');
+      const build = path.join(source, 'build');
+      const args = ['-B', build, '-S', source, '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_SHARED_LIBS=OFF', '-DGGML_NATIVE=OFF', '-DWHISPER_BUILD_TESTS=OFF'];
+      if (t.platform === 'darwin') args.push(`-DCMAKE_OSX_ARCHITECTURES=${t.arch === 'x64' ? 'x86_64' : 'arm64'}`, '-DGGML_METAL_EMBED_LIBRARY=ON');
+      execFileSync('cmake', args, { stdio: 'inherit' });
+      execFileSync('cmake', ['--build', build, '--config', 'Release', '--target', 'whisper-server', '-j', '4'], { stdio: 'inherit' });
+      const found = filesUnder(build).find(file => path.basename(file) === 'whisper-server');
+      if (!found) throw Error('Compiled whisper-server was not found');
+      assertArchitecture(path.join(build, found), t);
+      fs.copyFileSync(path.join(build, found), path.join(t.dir, 'whisper-server'));
+      fs.chmodSync(path.join(t.dir, 'whisper-server'), 0o755);
+      return ['whisper-server'];
+    });
+  }
+});

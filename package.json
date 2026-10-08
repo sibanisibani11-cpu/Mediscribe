@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -13,7 +13,7 @@
     "dev": "next dev --turbopack -p 9002",
     "electron": "electron .",
     "electron:dev": "pkill -f \"electron .\" || true; lsof -i :9002 -i :8081 -i :8080 -t | xargs kill -9 2>/dev/null || true; concurrently \"npm run dev\" \"wait-on http://localhost:9002 && NODE_ENV=development electron .\"",
-    "build": "next build",
+    "build": "npm run verify && npm run configure:public && next build",
     "build:electron": "npm run build && electron-builder",
     "build:all": "npm run build && electron-builder --mac --win --linux",
     "build:dist": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --win --linux --publish=never",
@@ -23,19 +23,24 @@
     "build:android": "npm run build && npx cap sync android && cd android && ./gradlew bundleRelease assembleRelease",
     "cap:sync": "npm run build && npx cap sync android",
     "dist": "npm run build && electron-builder --publish=never",
-    "dist:personal-win": "export NEXT_PUBLIC_PERSONAL_LIFETIME_FREE=true && touch electron/lifetime.lock && npm run build && electron-builder --win --publish=never && rm electron/lifetime.lock",
     "bundle-models": "node scripts/bundle-models.js",
     "bundle-ollama": "node scripts/bundle-ollama.js",
     "bundle-ffmpeg": "node scripts/bundle-ffmpeg.js",
     "bundle-whisper": "node scripts/bundle-whisper.js",
     "bundle-vcredist": "node scripts/bundle-vcredist.js",
     "generate-icons": "node scripts/generate-icons.js",
-    "prebuild": "npm run generate-icons && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper && npm run bundle-vcredist",
+    "prebuild": "npm run generate-icons && npm run bundle-ollama && npm run bundle-ffmpeg && npm run bundle-whisper && npm run bundle-vcredist && npm run bundle-models",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx --cache --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",
     "lint:fix": "eslint . --ext .ts,.tsx --cache --fix --ignore-pattern '.next/**' --ignore-pattern 'out/**' --ignore-pattern 'build/**' --ignore-pattern 'dist-electron/**' --ignore-pattern 'node_modules/**'",
     "subscribers": "node scripts/list-subscribers.js",
-    "typecheck": "tsc --noEmit"
+    "sync:msstore": "node scripts/sync-msstore-stats.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test scripts/*.test.js",
+    "check:security": "node scripts/check-client-security.js",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run check:security",
+    "configure:public": "node scripts/configure-public-client.js",
+    "release:check": "node scripts/check-release-readiness.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
@@ -72,17 +77,17 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "concurrently": "^9.1.0",
-    "electron": "^39.2.7",
-    "electron-builder": "^24.13.3",
+    "electron": "^42.11.6",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "firebase": "^11.3.1",
-    "firebase-admin": "^12.0.0",
+    "firebase-admin": "^14.4.0",
     "lucide-react": "^0.475.0",
-    "next": "15.5.9",
+    "next": "^15.5.25",
     "next-themes": "^0.4.0",
-    "postcss": "^8",
+    "postcss": "^8.5.28",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "resend": "^6.9.1",
@@ -128,7 +133,11 @@
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+      "!electron/**/lifetime.lock",
+      "!**/*service-account*.json",
+      "!**/*firebase-adminsdk*.json",
+      "!**/local_simulated_users.json"
     ],
     "extraFiles": [
       {
@@ -145,15 +154,16 @@
       "extraResources": [
         {
           "from": "resources/models",
-          "to": "models"
+          "to": "models",
+          "filter": [
+            "ggml-base.en.bin",
+            "ggml-tiny.bin",
+            "model-manifest.json"
+          ]
         },
         {
-          "from": "resources/bin",
-          "to": "bin"
-        },
-        {
-          "from": ".env",
-          "to": ".env"
+          "from": "resources/bin/darwin-${arch}",
+          "to": "bin/darwin-${arch}"
         }
       ],
       "category": "public.app-category.medical",
@@ -203,24 +213,21 @@
       ],
       "icon": "build/icon.ico",
       "publisherName": "MediScribe",
-      "verifyUpdateCodeSignature": false,
+      "verifyUpdateCodeSignature": true,
       "requestedExecutionLevel": "asInvoker",
       "extraResources": [
         {
           "from": "resources/models",
-          "to": "models"
-        },
-        {
-          "from": "resources/bin",
-          "to": "bin",
+          "to": "models",
           "filter": [
-            "*.exe",
-            "*.dll"
+            "ggml-base.en.bin",
+            "ggml-tiny.bin",
+            "model-manifest.json"
           ]
         },
         {
-          "from": ".env",
-          "to": ".env"
+          "from": "resources/bin/win32-${arch}",
+          "to": "bin/win32-${arch}"
         }
       ],
       "extraFiles": [
@@ -266,15 +273,16 @@
       "extraResources": [
         {
           "from": "resources/models",
-          "to": "models"
+          "to": "models",
+          "filter": [
+            "ggml-base.en.bin",
+            "ggml-tiny.bin",
+            "model-manifest.json"
+          ]
         },
         {
-          "from": "resources/bin",
-          "to": "bin"
-        },
-        {
-          "from": ".env",
-          "to": ".env"
+          "from": "resources/bin/linux-${arch}",
+          "to": "bin/linux-${arch}"
         }
       ]
     },
@@ -306,6 +314,17 @@
           "path": "/Applications"
         }
       ]
+    },
+    "afterPack": "scripts/after-pack.js"
+  },
+  "overrides": {
+    "postcss": "^8.5.28",
+    "sharp": "^0.35.4",
+    "gaxios": {
+      "uuid": "^11.1.1"
     }
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

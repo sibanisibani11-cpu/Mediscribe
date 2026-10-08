@@ -23,7 +23,7 @@ const nextConfig = (phase) => {
           basePath: '',
         }),
     typescript: {
-      ignoreBuildErrors: true,
+      ignoreBuildErrors: false,
     },
     eslint: {
       ignoreDuringBuilds: true,

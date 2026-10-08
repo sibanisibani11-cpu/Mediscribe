@@ -75,3 +75,14 @@ service-account*.json
 # Developer bypass lock files - NEVER commit these
 developer-subscription-bypass.lock
 electron/lifetime.lock
+
+/server/node_modules/
+/server/.env*
+/server/*.pem
+/.firebase/
+
+# Local release inputs
+native-assets.json
+android-release.keystore
+rzp-key*.csv
+client_secret*.json

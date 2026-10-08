@@ -1,4 +1,6 @@
 "use client";
+import { auth } from "../lib/firebase";
+import { readAccountLibrary, writeAccountLibrary } from "../lib/account-storage";
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
@@ -32,15 +34,6 @@ const DEFAULT_CATEGORIES = [
 
 const STORAGE_KEY = "mediscribe_templates";
 
-function loadLocalTemplates(): Template[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-function saveLocalTemplates(t: Template[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(t));
-}
 function generateId() {
   return `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -60,6 +53,9 @@ interface TemplateManagerProps {
 }
 
 export function TemplateManager({ onBack, embedded = false }: TemplateManagerProps) {
+  const ownerUid = useRef<string | undefined>(auth?.currentUser?.uid).current;
+  const loadLocalTemplates = () => readAccountLibrary<Template>(STORAGE_KEY, ownerUid);
+  const saveLocalTemplates = (records: Template[]) => writeAccountLibrary(STORAGE_KEY, ownerUid, records);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -93,11 +89,14 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   useEffect(() => {
     if (electron?.getTemplates) {
       electron.getTemplates().then((tpls: Template[]) => {
-        setTemplates(tpls?.length ? tpls : loadLocalTemplates());
-      }).catch(() => setTemplates(loadLocalTemplates()));
+        setTemplates(tpls || []);
+      }).catch((error: Error) => toast({ variant: "destructive", title: "Library could not be loaded", description: error.message }));
     } else {
-      setTemplates(loadLocalTemplates());
+      try { setTemplates(loadLocalTemplates()); } catch (error) { toast({ variant: "destructive", title: "Library could not be loaded", description: error instanceof Error ? error.message : "Saved data has been preserved." }); }
     }
+    return electron?.onLibrariesChanged?.(() => {
+      electron.getTemplates().then((tpls: Template[]) => setTemplates(tpls || [])).catch((error: Error) => toast({ variant: "destructive", title: "Library could not be loaded", description: error.message }));
+    });
   }, [electron]);
 
   useEffect(() => {
@@ -119,8 +118,8 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   }, []);
 
   const persist = async (next: Template[]) => {
-    setTemplates(next);
     saveLocalTemplates(next);
+    setTemplates(next);
   };
 
   const resetDraft = () => {
@@ -232,10 +231,8 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
         setDraftExt(res.ext);
         setDraftOriginalFilename(originalName);
       } else {
-        // Web fallback: store as base64 in state (no disk persistence)
-        setDraftFilePath(`__web__:${file.name}`);
-        setDraftExt(ext.toUpperCase());
-        setDraftOriginalFilename(originalName);
+        throw new Error("File templates require the desktop app. Text templates are available here.");
+
       }
 
       setDraftType("file");
@@ -274,10 +271,12 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
       originalFilename: draftOriginalFilename,
     };
 
+    try {
     if (isCreating) {
       if (electron?.addTemplate) {
         const res = await electron.addTemplate(payload);
-        if (res.success) { setTemplates(res.templates); saveLocalTemplates(res.templates); }
+        if (!res.success) throw new Error(res.error || "The template could not be saved.");
+        setTemplates(res.templates);
       } else {
         await persist([{ id: generateId(), ...payload, createdAt: now, updatedAt: now }, ...templates]);
       }
@@ -285,30 +284,33 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
     } else if (editing) {
       if (electron?.updateTemplate) {
         const res = await electron.updateTemplate({ id: editing.id, ...payload });
-        if (res.success) { setTemplates(res.templates); saveLocalTemplates(res.templates); }
+        if (!res.success) throw new Error(res.error || "The template could not be saved.");
+        setTemplates(res.templates);
       } else {
         await persist(templates.map(t => t.id === editing.id ? { ...t, ...payload, updatedAt: now } : t));
       }
       toast({ title: "Template updated" });
     }
     closeEditor();
+    } catch (error) { toast({ variant: "destructive", title: "Save failed", description: error instanceof Error ? error.message : "Please retry." }); }
   };
 
   // ── Delete ──
   const handleDelete = async (id: string) => {
+    try {
     const tpl = templates.find(t => t.id === id);
     if (electron?.removeTemplate) {
       const res = await electron.removeTemplate(id);
-      if (res.success) { setTemplates(res.templates); saveLocalTemplates(res.templates); }
+      if (!res.success) throw new Error(res.error || "The template could not be saved.");
+        setTemplates(res.templates);
       // Also delete the file from disk
-      if (tpl?.filePath && electron?.deleteTemplateFile) {
-        await electron.deleteTemplateFile(tpl.filePath);
-      }
+      // Attachment retention and reference ownership are managed by the native library.
     } else {
       await persist(templates.filter(t => t.id !== id));
     }
     setDeletingId(null);
     toast({ title: "Template deleted" });
+    } catch (error) { toast({ variant: "destructive", title: "Delete failed", description: error instanceof Error ? error.message : "Please retry." }); }
   };
 
   const allCategories = ["All", ...Array.from(new Set([...DEFAULT_CATEGORIES, ...templates.map(t => t.category)]))];
@@ -629,6 +631,7 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
           </div>
         )}
       </div>
+      <SyncConfirmDialog open={confirmDialog.open} onOpenChange={open => setConfirmDialog(prev => ({ ...prev, open }))} onConfirm={() => executeSync(confirmDialog.action)} action={confirmDialog.action} />
     </div>
   );
 }

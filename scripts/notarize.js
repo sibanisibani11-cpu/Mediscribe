@@ -8,6 +8,7 @@ exports.default = async function notarizing(context) {
 
     // Skip notarization if developer didn't provide credentials
     if (!(process.env.APPLE_ID && process.env.APPLE_ID_PASSWORD)) {
+        if (process.env.REQUIRE_SIGNING === 'true') throw new Error('Release notarization credentials are missing');
         console.warn('⚠️  Skipping Mac notarization: APPLE_ID and APPLE_ID_PASSWORD not set in environment.');
         return;
     }
@@ -27,6 +28,7 @@ exports.default = async function notarizing(context) {
         });
         console.log('✅ Notarization complete!');
     } catch (error) {
+        if (process.env.REQUIRE_SIGNING === 'true') throw error;
         console.warn('⚠️  Notarization skipped/failed (expected on local dev without setup):', error.message);
         // Don't throw for local development
     }

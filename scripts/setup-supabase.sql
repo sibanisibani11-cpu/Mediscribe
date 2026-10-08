@@ -30,9 +30,5 @@ alter table public.app_users enable row level security;
 drop policy if exists "Allow public upsert on app_users" on public.app_users;
 drop policy if exists "Allow read access to app_users" on public.app_users;
 
--- Policy: Allow app clients to insert / update their own tracking record anonymously
-create policy "Allow public upsert on app_users"
-  on public.app_users
-  for all
-  using (true)
-  with check (true);
+-- All mutations and reads must use a protected backend service role.
+revoke all on public.app_users from anon, authenticated;

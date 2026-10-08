@@ -144,9 +144,9 @@ export function ModelSelector({ className }: ModelSelectorProps) {
       });
     };
 
-    (window.electron as any).onDownloadProgress(handleProgress);
-    (window.electron as any).onDownloadComplete(handleComplete);
-    (window.electron as any).onDownloadError(handleError);
+    const removeProgress = (window.electron as any).onDownloadProgress(handleProgress);
+    const removeComplete = (window.electron as any).onDownloadComplete(handleComplete);
+    const removeError = (window.electron as any).onDownloadError(handleError);
 
     // Listen for server status updates
     const getInitialStatus = async () => {
@@ -160,6 +160,7 @@ export function ModelSelector({ className }: ModelSelectorProps) {
     });
 
     return () => {
+      removeProgress?.(); removeComplete?.(); removeError?.();
       if (typeof removeStatusListener === 'function') removeStatusListener();
     };
   }, [isElectron, toast, fetchModels]);

@@ -1,0 +1,21 @@
+{
+  "name": "mediscribe-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.4.0",
+    "firebase-functions": "^7.0.0"
+  },
+  "main": "functions.js",
+  "overrides": {
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
+  }
+}

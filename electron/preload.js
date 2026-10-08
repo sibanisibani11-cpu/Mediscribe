@@ -1,11 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+function subscribe(channel, callback) {
+  const listener = (_event, ...args) => callback(...args);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
 contextBridge.exposeInMainWorld('electron', {
-  startOAuth: (provider) => ipcRenderer.send('start-oauth', provider),
   onOAuthCode: (callback) => ipcRenderer.on('oauth-code', (event, ...args) => callback(...args)),
   // Text typing functionality
   typeText: (text, restoreWindow) => ipcRenderer.invoke('type-text', text, restoreWindow),
 
+  getTelemetryContext: () => ipcRenderer.invoke('get-telemetry-context'),
   // App information
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
@@ -46,9 +51,9 @@ contextBridge.exposeInMainWorld('electron', {
   onTriggerStopRecording: (callback) => ipcRenderer.on('trigger-stop-recording', callback),
 
   // Download progress listeners
-  onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
-  onDownloadComplete: (callback) => ipcRenderer.on('download-complete', (event, data) => callback(data)),
-  onDownloadError: (callback) => ipcRenderer.on('download-error', (event, data) => callback(data)),
+  onDownloadProgress: (callback) => subscribe('download-progress', callback),
+  onDownloadComplete: (callback) => subscribe('download-complete', callback),
+  onDownloadError: (callback) => subscribe('download-error', callback),
 
   // Ollama functionality
   checkOllamaStatus: () => ipcRenderer.invoke('check-ollama-status'),
@@ -62,22 +67,22 @@ contextBridge.exposeInMainWorld('electron', {
   formatWithOllama: (text, formatType) => ipcRenderer.invoke('format-with-ollama', text, formatType),
 
   // Ollama progress listeners
-  onOllamaDownloadProgress: (callback) => ipcRenderer.on('ollama-download-progress', (event, data) => callback(data)),
-  onOllamaDownloadComplete: (callback) => ipcRenderer.on('ollama-download-complete', (event, data) => callback(data)),
-  onOllamaDownloadError: (callback) => ipcRenderer.on('ollama-download-error', (event, data) => callback(data)),
+  onOllamaDownloadProgress: (callback) => subscribe('ollama-download-progress', callback),
+  onOllamaDownloadComplete: (callback) => subscribe('ollama-download-complete', callback),
+  onOllamaDownloadError: (callback) => subscribe('ollama-download-error', callback),
 
   // Floating button controls
   showFloatingButton: () => ipcRenderer.invoke('show-floating-button'),
   hideFloatingButton: () => ipcRenderer.invoke('hide-floating-button'),
   stopRecording: () => ipcRenderer.send('stop-recording'),
   triggerToggleRecording: () => ipcRenderer.send('trigger-toggle-recording'),
-  onRecStateChange: (callback) => ipcRenderer.on('rec-state-change', (event, state) => callback(state)),
+  onRecStateChange: (callback) => subscribe('rec-state-change', callback),
 
   // Activation & Licensing
   checkActivation: () => ipcRenderer.invoke('check-activation'),
   getLicenseDetails: () => ipcRenderer.invoke('get-license-details'),
   saveSubscriptionCache: (record) => ipcRenderer.invoke('save-subscription-cache', record),
-  getSubscriptionCache: () => ipcRenderer.invoke('get-subscription-cache'),
+  getSubscriptionCache: (uid) => ipcRenderer.invoke('get-subscription-cache', uid),
   saveAuthSession: (record) => ipcRenderer.invoke('save-auth-session', record),
   getAuthSession: () => ipcRenderer.invoke('get-auth-session'),
   clearAuthSession: () => ipcRenderer.invoke('clear-auth-session'),
@@ -92,6 +97,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Auto-Updater
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  openCheckout: (url) => ipcRenderer.invoke('open-checkout', url),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   onUpdateStatus: (callback) => {
     const handler = (event, data) => callback(data);
@@ -100,6 +106,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   // Dictionary
+  importLegacyLibraries: () => ipcRenderer.invoke('import-legacy-libraries'),
+  onLibrariesChanged: callback => { const listener = () => callback(); ipcRenderer.on('libraries-changed', listener); return () => ipcRenderer.removeListener('libraries-changed', listener); },
   getDictionary: () => ipcRenderer.invoke('get-dictionary'),
   addWord: (word) => ipcRenderer.invoke('add-word', word),
   removeWord: (word) => ipcRenderer.invoke('remove-word', word),
@@ -142,7 +150,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Typing Mode Management
   getTypingMode: () => ipcRenderer.invoke('get-typing-mode'),
   setTypingMode: (mode) => ipcRenderer.invoke('set-typing-mode', mode),
-  onTypingModeChange: (callback) => ipcRenderer.on('typing-mode-change', (event, mode) => callback(mode)),
+  onTypingModeChange: (callback) => subscribe('typing-mode-change', callback),
 
   // Floating Button Position
   getFloatingButtonPosition: () => ipcRenderer.invoke('get-floating-button-position'),
@@ -160,8 +168,8 @@ contextBridge.exposeInMainWorld('electron', {
   quitApp: () => ipcRenderer.invoke('quit-app'),
   toggleFullScreen: () => ipcRenderer.invoke('toggle-fullscreen'),
   isFullScreen: () => ipcRenderer.invoke('is-fullscreen'),
-  onFullScreenChange: (callback) => ipcRenderer.on('fullscreen-change', (event, isFS) => callback(isFS)),
-  onAppQuitting: (callback) => ipcRenderer.on('app-quitting', callback),
+  onFullScreenChange: (callback) => subscribe('fullscreen-change', callback),
+  onAppQuitting: (callback) => { const listener = () => callback(); ipcRenderer.on('app-quitting', listener); return () => ipcRenderer.removeListener('app-quitting', listener); },
 
   // Authentications
   googleLogin: () => ipcRenderer.invoke('google-login'),

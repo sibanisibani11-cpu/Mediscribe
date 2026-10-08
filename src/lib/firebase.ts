@@ -29,7 +29,7 @@ if (isFirebaseConfigured) {
     console.error("Firebase failed to initialize:", error);
   }
 } else {
-  console.warn("Firebase is not configured. Running in Fallback (Simulated) Mode.");
+  console.warn("Firebase is not configured. Sign-in is unavailable.");
 }
 
 export { auth, db, isFirebaseConfigured };

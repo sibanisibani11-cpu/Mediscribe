@@ -1,6 +1,8 @@
 "use client";
+import { backendRequest } from "../lib/backend";
+import { subscriberCSV } from "../lib/subscriber-csv";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ShieldCheck,
   Search,
@@ -27,7 +29,7 @@ import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { useToast } from '../hooks/use-toast';
 import { cn } from '../lib/utils';
-import { AdminSubscriberRecord, DownloadStats } from '../lib/admin-subscribers-service';
+import { AdminSubscriberRecord, AdminSubscribersResponse, DownloadStats } from '../lib/admin-subscribers-service';
 
 interface AdminSubscribersViewProps {
   onBack: () => void;
@@ -56,7 +58,13 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     totalRevenueINR: 0,
   });
   const [downloadStats, setDownloadStats] = useState<DownloadStats | null>(null);
+  const [operations, setOperations] = useState<AdminSubscribersResponse['operations']>();
 
+  const [pageCursors, setPageCursors] = useState<string[]>(['']);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [directoryTotal, setDirectoryTotal] = useState<number | null>(null);
+  const cursor = pageCursors[pageCursors.length - 1];
+  const requestNumber = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
@@ -67,41 +75,20 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
 
   const isElectron = typeof window !== 'undefined' && !!(window as any).electron;
 
-  const loadSubscribersData = async () => {
+  const loadSubscribersData = useCallback(async () => {
+    const request = ++requestNumber.current;
     setIsLoading(true);
     try {
-      if (isElectron && (window as any).electron?.getAdminSubscribers) {
-        const res = await (window as any).electron.getAdminSubscribers(currentUser);
-        if (res.success && res.subscribers) {
-          setSubscribers(res.subscribers);
-          if (res.summary) setSummary(res.summary);
-          if (res.downloads) setDownloadStats(res.downloads);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Failed to load subscribers',
-            description: res.error || 'Unknown error occurred.',
-          });
-        }
-      } else {
-        // Next.js Web API Route Fallback
-        const params = new URLSearchParams();
-        if (currentUser) params.set('adminEmail', currentUser);
-        const res = await fetch(`/api/admin/subscribers?${params.toString()}`);
-        const data = await res.json();
-        if (data.success && data.subscribers) {
-          setSubscribers(data.subscribers);
-          if (data.summary) setSummary(data.summary);
-          if (data.downloads) setDownloadStats(data.downloads);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Failed to fetch data',
-            description: data.error || 'Server error occurred.',
-          });
-        }
-      }
+      const data = await backendRequest('/v1/admin/subscribers?limit=50' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''));
+      if (request !== requestNumber.current) return;
+      setNextCursor(data.pagination?.nextCursor || null);
+      setDirectoryTotal(data.pagination?.totalUsers ?? null);
+      setSubscribers(data.subscribers);
+      setSummary(data.summary);
+      setDownloadStats(data.downloads || null);
+      setOperations(data.operations);
     } catch (err: any) {
+      if (request !== requestNumber.current) return;
       console.error('[AdminSubscribersView] Error loading data:', err);
       toast({
         variant: 'destructive',
@@ -109,9 +96,9 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         description: err.message || 'Could not connect to subscription backend.',
       });
     } finally {
-      setIsLoading(false);
+      if (request === requestNumber.current) setIsLoading(false);
     }
-  };
+  }, [cursor, toast]);
 
   useEffect(() => {
     loadSubscribersData();
@@ -119,8 +106,8 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     const interval = setInterval(() => {
       loadSubscribersData();
     }, 30000);
-    return () => clearInterval(interval);
-  }, [currentUser]);
+    return () => { clearInterval(interval); requestNumber.current++; };
+  }, [currentUser, loadSubscribersData]);
 
   // Filtered subscribers list
   const filteredSubscribers = useMemo(() => {
@@ -162,45 +149,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
       return;
     }
 
-    const headers = [
-      'User ID',
-      'Display Name',
-      'Country',
-      'Email',
-      'Phone Contact',
-      'Hardware ID',
-      'Subscription Plan',
-      'Status',
-      'Active Status',
-      'Start Date',
-      'Expires At',
-      'Validity',
-      'Current Amount (INR)',
-      'Total Lifetime Amount Paid (INR)',
-      'Data Source',
-      'Total Transactions',
-    ];
-
-    const rows = subscribers.map((s) => [
-      `"${s.userId}"`,
-      `"${s.displayName}"`,
-      `"${s.country?.name || 'India'}"`,
-      `"${s.email || 'N/A'}"`,
-      `"${s.phone || 'N/A'}"`,
-      `"${s.hwid || 'N/A'}"`,
-      `"${s.currentPlan}"`,
-      `"${s.status}"`,
-      `"${s.isActive ? 'Active' : 'Inactive'}"`,
-      `"${s.startDate}"`,
-      `"${s.expiresAt}"`,
-      `"${s.validityText}"`,
-      `"${s.currentAmount}"`,
-      `"${s.totalAmountSubscribed}"`,
-      `"${s.source}"`,
-      `"${s.history.length}"`,
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = subscriberCSV(subscribers);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -209,10 +158,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     toast({
       title: '📁 Export Complete',
-      description: 'Subscriber report exported as CSV.',
+      description: 'Current page exported as CSV. Currency and history coverage are included.',
     });
   };
 
@@ -220,27 +170,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     if (!selectedUser) return;
     setIsSyncingUser(true);
     try {
-      if (isElectron && (window as any).electron?.syncAdminSubscriber) {
-        const res = await (window as any).electron.syncAdminSubscriber(selectedUser);
-        if (res.success) {
-          toast({
-            title: '☁️ Synced to Cloud Database',
-            description: `Successfully updated profile for ${selectedUser.displayName}`,
-          });
-          loadSubscribersData();
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Sync failed',
-            description: res.error || 'Could not sync user.',
-          });
-        }
-      } else {
-        toast({
-          title: 'Sync Notice',
-          description: 'Sync feature is available in desktop app connected to Firebase.',
-        });
-      }
+      const payment = selectedUser.history.find(item => item.status === 'captured');
+      if (!payment) throw new Error('No captured payment is available to reconcile.');
+      await backendRequest('/v1/admin/reconcile', { paymentId: payment.paymentId });
+      await loadSubscribersData();
+      toast({ title: 'Subscription reconciled' });
     } catch (e: any) {
       toast({
         variant: 'destructive',
@@ -280,7 +214,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 </span>
               </h1>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Live aggregated analytics across payments, registrations and app opens
+                Subscriber summaries and search cover the current page. Activity counts cover observed client events.
               </p>
             </div>
           </div>
@@ -309,6 +243,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span>Page {pageCursors.length} · {subscribers.length} accounts shown{directoryTotal !== null ? ' of ' + directoryTotal : ''}</span>
+        <Button variant="outline" disabled={isLoading || pageCursors.length === 1} onClick={() => { setSelectedUser(null); setPageCursors(values => values.slice(0, -1)); }}>Previous</Button>
+        <Button variant="outline" disabled={isLoading || !nextCursor} onClick={() => { if (nextCursor) { setSelectedUser(null); setPageCursors(values => [...values, nextCursor]); } }}>Next</Button>
+      </div>
       {/* KPI Stats Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Card 1: Active Pro */}
@@ -332,11 +271,11 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
           </div>
         </div>
 
-        {/* Card 2: Total Realized Revenue */}
+        {/* Card 2: Net INR (This Page) */}
         <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-violet-950/40 dark:via-violet-950/20 dark:to-transparent border border-violet-200/60 dark:border-violet-800/40 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-violet-400">
-              Total Realized Revenue
+              Net INR in Shown History
             </span>
             <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center">
               <TrendingUp className="h-4 w-4" />
@@ -351,7 +290,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             </span>
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1">
-            Total captured transaction value
+            Shown payment history only; older entries may be excluded
           </div>
         </div>
 
@@ -397,7 +336,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-transparent dark:from-blue-950/40 dark:via-blue-950/20 dark:to-transparent border border-blue-200/60 dark:border-blue-800/40 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
-              Total User Directory
+              Accounts on This Page
             </span>
             <div className="h-8 w-8 rounded-xl bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <Users className="h-4 w-4" />
@@ -411,6 +350,19 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             Registered accounts & paying devices
           </div>
         </div>
+      </div>
+
+      <div role="status" className={cn('rounded-xl border p-4 text-sm',
+        !operations || operations.stale || operations.openIssues > 0
+          ? 'border-amber-300 bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'
+          : 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100')}>
+        <p className="font-semibold">Payment recovery checks</p>
+        <p>{operations?.lastCompletedAt
+          ? `Last completed: ${new Date(operations.lastCompletedAt).toLocaleString()}`
+          : 'No completed recovery check recorded yet.'}</p>
+        {operations && <p>{operations.openIssues} unresolved issue(s). {operations.lastChecked} records checked in the last batch.</p>}
+        {operations?.stale && <p>Recovery checks are overdue. Check the scheduled backend job.</p>}
+        {!!operations?.openIssues && <p>Review unresolved payment records in the protected reconciliation issues collection.</p>}
       </div>
 
       {/* MediScribe Download & Platform Intelligence Card */}
@@ -428,21 +380,21 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                   </h3>
                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-400/30 flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    Real-Time Live
+                    Source Reports
                   </span>
                   <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-violet-500/20 text-violet-300 rounded-full border border-violet-400/30">
-                    App Direct
+                    App / Store / GitHub
                   </span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  Live aggregation from users opening the MediScribe desktop app
+                  App activity and acquisition reports
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
-                <span className="text-[11px] font-bold text-slate-300">Total Downloads:</span>
+                <span className="text-[11px] font-bold text-slate-300">First Opens:</span>
                 <span className="text-lg font-black text-white">{downloadStats.total}</span>
               </div>
               <div className="flex items-center gap-2 bg-white/10 dark:bg-white/5 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10">
@@ -452,6 +404,25 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4 border-b border-white/10 text-sm">
+            <div>
+              <div className="text-slate-300">Microsoft Store acquisitions</div>
+              <strong>{downloadStats.sources?.msStore?.total ?? 'Not synced'}</strong>
+              {downloadStats.sources?.msStore && (
+                <div className="text-xs text-slate-300 mt-1">
+                  {downloadStats.sources.msStore.startDate} to {downloadStats.sources.msStore.endDate}
+                  <br />Last synced: {downloadStats.sources.msStore.syncedAt ? new Date(downloadStats.sources.msStore.syncedAt).toLocaleString() : 'Unknown'}
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-slate-300">GitHub installer downloads</div>
+              <strong>{downloadStats.sources?.github?.total ?? 'Unavailable'}</strong>
+              <div className="text-xs text-slate-300 mt-1">
+                Windows: {downloadStats.sources?.github?.windows ?? 0} / macOS: {downloadStats.sources?.github?.mac ?? 0} / Linux: {downloadStats.sources?.github?.linux ?? 0}
+              </div>
+            </div>
+          </div>
           {/* OS Platform & User Breakdown Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-4">
             {/* Windows */}
@@ -459,7 +430,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🪟</span>
-                  <span className="text-xs font-black text-white tracking-wide">Windows (Store & Direct)</span>
+                  <span className="text-xs font-black text-white tracking-wide">Windows First Opens</span>
                 </div>
                 <span className="text-xs font-bold text-cyan-400">
                   {downloadStats.total > 0 ? `${Math.round((downloadStats.windows / downloadStats.total) * 100)}%` : '0%'}
@@ -468,11 +439,8 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <div className="mt-3 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-white">{downloadStats.windows}</span>
                 <div className="flex items-center gap-1.5 text-[10px]">
-                  <span className="bg-blue-500/20 text-cyan-300 font-bold px-1.5 py-0.5 rounded border border-cyan-400/30">
-                    Store: {downloadStats.windowsBreakdown?.msStore ?? 0}
-                  </span>
                   <span className="bg-white/10 text-slate-300 font-bold px-1.5 py-0.5 rounded">
-                    EXE: {downloadStats.windowsBreakdown?.directExe ?? 0}
+                    App: {downloadStats.windowsBreakdown?.directExe ?? 0}
                   </span>
                 </div>
               </div>
@@ -490,7 +458,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🍎</span>
-                  <span className="text-xs font-black text-white tracking-wide">macOS (DMG / Apple Silicon)</span>
+                  <span className="text-xs font-black text-white tracking-wide">macOS First Opens</span>
                 </div>
                 <span className="text-xs font-bold text-violet-400">
                   {downloadStats.total > 0 ? `${Math.round((downloadStats.mac / downloadStats.total) * 100)}%` : '0%'}
@@ -498,7 +466,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               </div>
               <div className="mt-3 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-white">{downloadStats.mac}</span>
-                <span className="text-[10px] text-slate-400 font-medium">installations</span>
+                <span className="text-[10px] text-slate-400 font-medium">first opens</span>
               </div>
               {/* Progress bar */}
               <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
@@ -514,7 +482,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🐧</span>
-                  <span className="text-xs font-black text-white tracking-wide">Linux (AppImage / DEB)</span>
+                  <span className="text-xs font-black text-white tracking-wide">Linux First Opens</span>
                 </div>
                 <span className="text-xs font-bold text-amber-400">
                   {downloadStats.total > 0 ? `${Math.round((downloadStats.linux / downloadStats.total) * 100)}%` : '0%'}
@@ -522,7 +490,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               </div>
               <div className="mt-3 flex items-baseline justify-between">
                 <span className="text-2xl font-black text-white">{downloadStats.linux}</span>
-                <span className="text-[10px] text-slate-400 font-medium">installations</span>
+                <span className="text-[10px] text-slate-400 font-medium">first opens</span>
               </div>
               {/* Progress bar */}
               <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
@@ -539,13 +507,13 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
                 <span className="h-2 w-2 rounded-full bg-blue-400" />
-                <span className="text-slate-300 font-medium">Guest (Direct) Downloads:</span>
+                <span className="text-slate-300 font-medium">Observed First Opens:</span>
                 <span className="font-bold text-white">{downloadStats.guest}</span>
               </div>
               <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span className="text-slate-300 font-medium">Logged-In Downloads:</span>
-                <span className="font-bold text-white">{downloadStats.loggedIn}</span>
+                <span className="text-slate-300 font-medium">Login Attribution:</span>
+                <span className="font-bold text-white">Not collected</span>
               </div>
               <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
                 <span className="h-2 w-2 rounded-full bg-violet-400" />
@@ -555,11 +523,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             </div>
 
             <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-              <span>🎯 Conversion Rate:</span>
-              <span className="font-bold text-emerald-400">
-                {downloadStats.total > 0 ? `${Math.round((summary.totalUsers / downloadStats.total) * 100)}%` : '0%'}
-              </span>
-              <span>(Downloaded → App Registered)</span>
+              <span>Client events can be missing or duplicated across reinstalls; these are not unique people.</span>
             </div>
           </div>
         </div>
@@ -646,7 +610,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search email, phone, HWID, payment ID..."
+            placeholder="Search this page by email, name or payment ID..."
             className="w-full h-9 pl-9 pr-4 text-xs rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
           />
         </div>
@@ -664,7 +628,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 <th className="py-3 px-4">Start Date</th>
                 <th className="py-3 px-4">Expiry Date & Validity</th>
                 <th className="py-3 px-4">Current Amount</th>
-                <th className="py-3 px-4">Total Subscribed (LTV)</th>
+                <th className="py-3 px-4">Net in Shown History</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -741,9 +705,9 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                       {/* Column 2: Country */}
                       <td className="py-3.5 px-4">
                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-xs">
-                          <span className="text-sm leading-none">{sub.country?.flag || '🇮🇳'}</span>
+                          <span className="text-sm leading-none">{sub.country?.flag || '🌐'}</span>
                           <span className="font-bold text-slate-800 dark:text-slate-200 text-[11px] whitespace-nowrap">
-                            {sub.country?.name || 'India'}
+                            {sub.country?.name || 'Unknown'}
                           </span>
                         </div>
                       </td>
@@ -814,7 +778,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col">
                           <span className="font-black text-emerald-600 dark:text-emerald-400 text-xs">
-                            {sub.totalAmountSubscribedFormatted}
+                            {sub.totalAmountSubscribedFormatted}{sub.historyTruncated ? " (partial)" : ""}
                           </span>
                           <span className="text-[9px] text-slate-400 font-medium">
                             {sub.history.length} payment{sub.history.length === 1 ? '' : 's'}
@@ -918,9 +882,9 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Lifetime LTV</div>
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Net in Shown History</div>
                   <div className="font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    {selectedUser.totalAmountSubscribedFormatted}
+                    {selectedUser.totalAmountSubscribedFormatted}{selectedUser.historyTruncated ? " (partial)" : ""}
                   </div>
                 </div>
                 <div>
@@ -994,7 +958,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               {/* Transaction History Timeline */}
               <div className="flex flex-col gap-2">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Payment & Subscription History ({selectedUser.history.length})
+                  Payment & Subscription History ({selectedUser.history.length}{selectedUser.historyTruncated ? "+; newest entries shown" : ""})
                 </h3>
 
                 {selectedUser.history.length === 0 ? (
@@ -1054,8 +1018,9 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                           </div>
 
                           <div className="flex flex-col items-end shrink-0">
+                            {!!item.amountRefunded && <span className="text-xs">Refunded: {new Intl.NumberFormat('en', { style: 'currency', currency: item.currency }).format(item.amountRefunded)} · Net: {new Intl.NumberFormat('en', { style: 'currency', currency: item.currency }).format(item.netAmount ?? item.amount - item.amountRefunded)}</span>}
                             <span className="font-black text-slate-900 dark:text-white text-xs">
-                              ₹{item.amount} {item.currency}
+                              {new Intl.NumberFormat('en', { style: 'currency', currency: item.currency }).format(item.amount)}
                             </span>
                             <span
                               className={cn(

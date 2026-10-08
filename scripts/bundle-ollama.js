@@ -1,122 +1,29 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const https = require('https');
-
-const RESOURCES_DIR = path.join(__dirname, '../resources/bin');
-const TEMP_DIR = path.join(__dirname, '../temp_ollama');
-
-// URLs
-const URLS = {
-    darwin: 'https://ollama.com/download/Ollama-darwin.zip',
-    win32: 'https://ollama.com/download/ollama-windows-amd64.zip',
-    linux: 'https://ollama.com/download/ollama-linux-amd64.tgz'
-};
-
-function removeDirSync(dirPath) {
-    if (fs.existsSync(dirPath)) {
-        fs.rmSync(dirPath, { recursive: true, force: true });
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { target, asset, bundleArchive, filesUnder, assertArchitecture, run } = require('./native-assets');
+run(async () => {
+  const t = target(); if (!t) return;
+  const urls = { darwin: 'https://ollama.com/download/Ollama-darwin.zip', win32: 'https://ollama.com/download/ollama-windows-amd64.zip', linux: 'https://ollama.com/download/ollama-linux-amd64.tgz' };
+  const pin = asset('ollama', t.id, urls[t.platform]);
+  pin.layoutVersion = 2;
+  const extension = new URL(pin.url).pathname.endsWith('.tar.zst') ? 'tar.zst' : t.platform === 'linux' ? 'tgz' : 'zip';
+  await bundleArchive('ollama', t, pin, extension, async dir => {
+    const source = t.platform === 'darwin' ? path.join(dir, 'Ollama.app/Contents/Resources') : dir;
+    const executable = t.platform === 'win32' ? 'ollama.exe' : 'ollama';
+    const from = t.platform === 'linux' ? path.join(source, 'bin/ollama') : path.join(source, executable);
+    assertArchitecture(from, t);
+    fs.copyFileSync(from, path.join(t.dir, executable));
+    if (t.platform !== 'win32') fs.chmodSync(path.join(t.dir, executable), 0o755);
+    const installed = [executable];
+    // Preserve the upstream runtime libraries, including inference runners.
+    for (const folder of fs.readdirSync(source).filter(name => fs.statSync(path.join(source, name)).isDirectory())) {
+      fs.cpSync(path.join(source, folder), path.join(t.dir, folder), { recursive: true, dereference: true });
+      installed.push(...filesUnder(path.join(t.dir, folder)).map(file => path.join(folder, file)));
     }
-}
-
-async function bundleOllama() {
-    console.log('📦 Bundling Ollama for multiple platforms...');
-
-    // Ensure directories exist
-    if (!fs.existsSync(RESOURCES_DIR)) {
-        fs.mkdirSync(RESOURCES_DIR, { recursive: true });
+    for (const entry of fs.readdirSync(source)) if (/\.(dll|dylib|so(?:\.\d+)*)$/.test(entry) || /^llama-/.test(entry) || /LICENSE|NOTICE/.test(entry)) {
+      fs.copyFileSync(path.join(source, entry), path.join(t.dir, entry)); installed.push(entry);
     }
-
-    // Priority: TARGET_PLATFORM env var, else only darwin if we are on a Mac and want mac only, else all
-    let platforms = ['darwin', 'win32', 'linux'];
-    if (process.env.TARGET_PLATFORM) {
-        platforms = [process.env.TARGET_PLATFORM];
-    } else if (process.platform === 'darwin') {
-        // If we're on Mac, we likely only need Darwin for quick dev/build
-        platforms = ['darwin'];
-    } else if (process.platform === 'linux') {
-        platforms = ['linux'];
-    }
-
-    for (const platform of platforms) {
-        const url = URLS[platform];
-        if (!url) continue;
-
-        // Skip if binary already exists and is valid
-        const binName = platform === 'win32' ? 'ollama.exe' : 'ollama';
-        const binPath = path.join(RESOURCES_DIR, binName);
-        if (fs.existsSync(binPath) && fs.statSync(binPath).size > 5 * 1024 * 1024) {
-            console.log(`✅ Ollama for ${platform} already exists, skipping download.`);
-            continue;
-        }
-
-        console.log(`\n--- Bundling for ${platform} ---`);
-
-        if (!fs.existsSync(TEMP_DIR)) {
-            fs.mkdirSync(TEMP_DIR, { recursive: true });
-        }
-
-        const ext = platform === 'linux' ? 'tgz' : 'zip';
-        const archiveName = `ollama-${platform}.${ext}`;
-        const archivePath = path.join(TEMP_DIR, archiveName);
-
-        console.log(`⬇️  Downloading ${archiveName}...`);
-        try {
-            execSync(`curl -L -o "${archivePath}" "${url}"`, { stdio: 'inherit' });
-        } catch (e) {
-            console.error(`❌ Download failed for ${platform}:`, e.message);
-            removeDirSync(TEMP_DIR);
-            continue;
-        }
-
-        const extractedDir = path.join(TEMP_DIR, 'extracted');
-        if (!fs.existsSync(extractedDir)) {
-            fs.mkdirSync(extractedDir, { recursive: true });
-        }
-
-        console.log('📂 Extracting...');
-        try {
-            if (platform === 'darwin') {
-                // macOS: Extract using tar, then copy binary from .app bundle
-                execSync(`tar -xf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
-                const src = path.join(extractedDir, 'Ollama.app', 'Contents', 'Resources', 'ollama');
-                if (fs.existsSync(src)) {
-                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama'));
-                    execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
-                } else {
-                    console.warn('⚠️  Could not find ollama binary in extracted archive');
-                }
-            } else if (platform === 'win32') {
-                // Windows: Use PowerShell Expand-Archive — GNU tar misinterprets D:\ as a remote host
-                const archivePathFwd = archivePath.replace(/\\/g, '/');
-                const extractedDirFwd = extractedDir.replace(/\\/g, '/');
-                execSync(`powershell -NoProfile -Command "Expand-Archive -Force -LiteralPath '${archivePath}' -DestinationPath '${extractedDir}'"`, { stdio: 'inherit' });
-                const src = path.join(extractedDir, 'ollama.exe');
-                if (fs.existsSync(src)) {
-                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama.exe'));
-                } else {
-                    console.warn('⚠️  Could not find ollama.exe in extracted archive');
-                }
-            } else if (platform === 'linux') {
-                // Linux: Extract ollama binary from tgz
-                execSync(`tar -xzf "${archivePath}" -C "${extractedDir}"`, { stdio: 'inherit' });
-                const src = path.join(extractedDir, 'bin', 'ollama');
-                if (fs.existsSync(src)) {
-                    fs.copyFileSync(src, path.join(RESOURCES_DIR, 'ollama'));
-                    execSync(`chmod +x "${path.join(RESOURCES_DIR, 'ollama')}"`);
-                } else {
-                    console.warn('⚠️  Could not find ollama binary in extracted archive');
-                }
-            }
-
-            console.log(`✅ Ollama for ${platform} bundled successfully to ${RESOURCES_DIR}`);
-        } catch (e) {
-            console.error(`❌ Extraction failed for ${platform}:`, e.message);
-        } finally {
-            // Cleanup temp for this platform
-            removeDirSync(TEMP_DIR);
-        }
-    }
-}
-
-bundleOllama();
+    return installed;
+  });
+});

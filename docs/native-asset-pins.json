@@ -1,0 +1,52 @@
+{
+  "ollama/darwin-x64": {
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.1/Ollama-darwin.zip",
+    "sha256": "be1a74128c632b3e4ff2744d35a5a9f7e7fd028008c9c383622551622fb91ea1",
+    "provenance": "GitHub upstream release asset digest v0.40.1"
+  },
+  "ollama/darwin-arm64": {
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.1/Ollama-darwin.zip",
+    "sha256": "be1a74128c632b3e4ff2744d35a5a9f7e7fd028008c9c383622551622fb91ea1",
+    "provenance": "GitHub upstream release asset digest v0.40.1"
+  },
+  "ollama/win32-x64": {
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.1/ollama-windows-amd64.zip",
+    "sha256": "b394d14436d38032f23190e3f14eb2c6dad5ebbe4e192414f74c8fdca01703ab",
+    "provenance": "GitHub upstream release asset digest v0.40.1"
+  },
+  "ollama/linux-x64": {
+    "url": "https://github.com/ollama/ollama/releases/download/v0.40.1/ollama-linux-amd64.tar.zst",
+    "sha256": "a7aebbe3dd76ccf1351a56a3e57218ad4863cb5f9a9938c58de87a37555e355d",
+    "provenance": "GitHub upstream release asset digest v0.40.1"
+  },
+  "whisper/win32-x64": {
+    "url": "https://github.com/ggml-org/whisper.cpp/releases/download/v1.8.2/whisper-bin-x64.zip",
+    "sha256": "b1514ebc099765e39fa37eb780b92a140a94c86bb0b3b3d98226b38825979732",
+    "provenance": "GitHub upstream release asset digest v1.8.2"
+  },
+  "ggml-base.en/all": {
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin",
+    "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+    "provenance": "Hugging Face Git LFS SHA-256 at 5359861c739e955e79d9a303bcbc70fb988958b1"
+  },
+  "ggml-tiny/all": {
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin",
+    "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+    "provenance": "Hugging Face Git LFS SHA-256 at 5359861c739e955e79d9a303bcbc70fb988958b1"
+  },
+  "whisper_source/all": {
+    "url": "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.8.2.tar.gz",
+    "sha256": "bcee25589bb8052d9e155369f6759a05729a2022d2a8085c1aa4345108523077",
+    "provenance": "Fresh HTTPS download from upstream release; pinned for reproducibility"
+  },
+  "vcredist/win32-x64": {
+    "url": "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    "provenance": "Fresh HTTPS download from upstream release; pinned for reproducibility"
+  },
+  "ffmpeg_source/all": {
+    "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+    "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+    "provenance": "Verified upstream OpenPGP release signature, FCF986EA15E6E293A5644F10B4322F04D67658D8"
+  }
+}

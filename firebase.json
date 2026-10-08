@@ -1,0 +1,19 @@
+{
+  "functions": [
+    {
+      "source": "server",
+      "codebase": "mediscribe",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".env*",
+        "*.pem",
+        "*-debug.log"
+      ]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

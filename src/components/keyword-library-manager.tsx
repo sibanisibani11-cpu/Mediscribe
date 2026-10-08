@@ -1,6 +1,8 @@
 "use client";
+import { auth } from "../lib/firebase";
+import { readAccountLibrary, writeAccountLibrary } from "../lib/account-storage";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, BookOpen, Loader2, SortAsc, Check, X, Edit2, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
@@ -28,17 +30,17 @@ export function KeywordLibraryManager() {
 
     const { toast } = useToast();
 
+    const ownerUid = useRef<string | undefined>(auth?.currentUser?.uid).current;
     const STORAGE_KEY = "mediscribe_keywords";
 
     const loadLocalKeywords = (): KeywordEntry[] => {
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            return raw ? JSON.parse(raw) : [];
-        } catch { return []; }
+            return readAccountLibrary(STORAGE_KEY, ownerUid);
+        } catch (error) { toast({ variant: "destructive", title: "Library could not be loaded", description: error instanceof Error ? error.message : "Saved data has been preserved." }); return []; }
     };
 
     const saveLocalKeywords = (k: KeywordEntry[]) => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(k));
+        writeAccountLibrary(STORAGE_KEY, ownerUid, k);
     };
 
     useEffect(() => {
@@ -48,6 +50,7 @@ export function KeywordLibraryManager() {
             setKeywords(loadLocalKeywords());
             setLoading(false);
         }
+        if (isElectron) return (window.electron as any).onLibrariesChanged?.(() => { fetchKeywords(); });
     }, [isElectron]);
 
     const fetchKeywords = async () => {
@@ -98,8 +101,8 @@ export function KeywordLibraryManager() {
                     },
                     ...keywords
                 ];
-                setKeywords(next);
                 saveLocalKeywords(next);
+                setKeywords(next);
                 setNewKeyword("");
                 setNewDescription("");
                 toast({
@@ -137,8 +140,8 @@ export function KeywordLibraryManager() {
                 }
             } else {
                 const next = keywords.filter(k => k.id !== id);
-                setKeywords(next);
                 saveLocalKeywords(next);
+                setKeywords(next);
                 setSelectedIds(prev => {
                     const next = new Set(prev);
                     next.delete(id);
@@ -171,8 +174,8 @@ export function KeywordLibraryManager() {
                 }
             } else {
                 const next = keywords.filter(k => !selectedIds.has(k.id));
-                setKeywords(next);
                 saveLocalKeywords(next);
+                setKeywords(next);
                 setSelectedIds(new Set());
                 toast({
                     title: "Bulk Deletion Successful",
@@ -217,8 +220,8 @@ export function KeywordLibraryManager() {
                 }
             } else {
                 const next = [...keywords].sort((a, b) => a.keyword.localeCompare(b.keyword));
-                setKeywords(next);
                 saveLocalKeywords(next);
+                setKeywords(next);
                 toast({
                     title: "Sorted",
                     description: "Keywords sorted alphabetically.",
@@ -271,8 +274,8 @@ export function KeywordLibraryManager() {
                 }
             } else {
                 const next = keywords.map(k => k.id === editingId ? { ...k, keyword: editKeyword.trim(), description: editDescription.trim() } : k);
-                setKeywords(next);
                 saveLocalKeywords(next);
+                setKeywords(next);
                 setEditingId(null);
                 toast({
                     title: "Keyword Updated",

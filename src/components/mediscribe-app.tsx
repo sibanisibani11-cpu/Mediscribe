@@ -12,8 +12,10 @@ import { useTheme } from "next-themes";
 import { SplashScreen } from './splash-screen';
 import { AuthPage } from "./auth-page";
 import { LandingPage } from "./landing-page";
-import { db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { auth } from "../lib/firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { refreshEntitlement } from "../lib/backend";
+
 import { trackAppLaunch } from "../lib/tracker";
 const DictationView = dynamic(() => import("./dictation-view").then((mod) => mod.DictationView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading dictation…</div> });
 const KeywordView = dynamic(() => import("./keyword-view").then((mod) => mod.KeywordView), { loading: () => <div className="w-full h-60 flex items-center justify-center text-sm text-slate-500">Loading keyword tools…</div> });
@@ -52,13 +54,19 @@ export function MediScribeApp() {
 
   const isElectron = typeof window !== 'undefined' && !!window.electron;
 
-  // Whitelisted accounts that bypass subscription (admin + MS Store reviewer accounts only)
-  const WHITELISTED_EMAILS = ['jeetumdc@gmail.com', 'test@mediapp.store', 'reviewer@mediapp.store'];
-  const isLifetimeFree = currentUser !== null && WHITELISTED_EMAILS.includes(currentUser.toLowerCase().trim());
-
-  // Authorized Admin emails
-  const ADMIN_EMAILS = ['jeetumdc@gmail.com', 'kalpadass@aiims.edu', 'admin@mediapp.store', 'support@mediapp.store'];
-  const isAdminUser = currentUser !== null && ADMIN_EMAILS.includes(currentUser.toLowerCase().trim());
+  const isLifetimeFree = false;
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  useEffect(() => {
+    if (!auth) { setIsActivated(false); return; }
+    return onAuthStateChanged(auth, user => {
+      setIsActivated(null); setLicenseDetails(null); setTrialExpiresAt(null);
+      setShowPricingFromExpiration(false); setCurrentView('landing');
+      setCurrentUser(user?.email || null); setCurrentUserUid(user?.uid || null);
+      setIsAuthenticated(!!user); setIsAdminUser(false);
+      if (!user) { setIsActivated(false); setLicenseDetails(null); setTrialExpiresAt(null); }
+      else user.getIdTokenResult().then(token => { if (auth.currentUser?.uid === user.uid) setIsAdminUser(token.claims.admin === true); }).catch(() => {});
+    });
+  }, []);
 
   useEffect(() => {
     if (isElectron) {
@@ -103,35 +111,6 @@ export function MediScribeApp() {
       }
     }
 
-    // Auto-login if already connected to Google, otherwise restore the last
-    // signed-in session (works offline — signed + machine-bound record saved
-    // by the main process after the last successful online login).
-    if (isElectron) {
-      (window.electron as any).getGoogleStatus?.().then((res: any) => {
-        if (res.connected) {
-          setIsAuthenticated(true);
-          setCurrentUser(res.userEmail || "Google User");
-        } else {
-          (window.electron as any).getAuthSession?.().then((session: any) => {
-            if (session && session.email) {
-              console.log('[MediScribe] Restored saved login session for', session.email);
-              setIsAuthenticated(true);
-              setCurrentUser(session.email);
-              if (session.uid) setCurrentUserUid(session.uid);
-            }
-          }).catch(() => {});
-        }
-      }).catch(() => {
-        (window.electron as any).getAuthSession?.().then((session: any) => {
-          if (session && session.email) {
-            setIsAuthenticated(true);
-            setCurrentUser(session.email);
-            if (session.uid) setCurrentUserUid(session.uid);
-          }
-        }).catch(() => {});
-      });
-    }
-
     // Get initial states from Electron
     if (isElectron) {
       // Check Full Screen Status
@@ -173,6 +152,8 @@ export function MediScribeApp() {
       if ((window.electron as any).onGoogleDeviceEvicted) {
         cleanupEvicted = (window.electron as any).onGoogleDeviceEvicted((data: any) => {
           setIsAuthenticated(false);
+          setCurrentUserUid(null); setIsActivated(false); setLicenseDetails(null); setTrialExpiresAt(null);
+          if (auth) void signOut(auth);
           setCurrentUser(null);
           setCurrentView('landing');
           toast({
@@ -192,160 +173,28 @@ export function MediScribeApp() {
     }
   }, [isElectron]);
 
-  // Separate useEffect to handle activation whenever currentUser/isLifetimeFree changes
   useEffect(() => {
-    if (!isMounted) return;
-
-    if (isLifetimeFree) {
-      setIsActivated(true);
-      return;
-    }
-
-    let unsubscribeFirestore: (() => void) | null = null;
-    let offlineTimer: ReturnType<typeof setTimeout> | null = null;
-
-    if (isFirebaseConfigured && db && currentUser) {
-      try {
-        const userDocKey = currentUserUid || currentUser;
-        let resolvedFromServer = false;
-
-        // Offline fallback: if the live Firestore check can't complete (no
-        // internet), trust the locally cached record of the LAST successful
-        // online verification — but only for the same account, and only until
-        // the subscription's own expiresAt (the cache returns null after that).
-        // Expired or missing cache → paywall, offline or not.
-        const tryOfflineCache = async () => {
-          if (resolvedFromServer) return;
-          try {
-            const cached = isElectron
-              ? await (window.electron as any).getSubscriptionCache?.()
-              : null;
-            const sameAccount = cached && (
-              (currentUser && cached.email === currentUser.toLowerCase().trim()) ||
-              (currentUserUid && cached.uid && cached.uid === currentUserUid)
-            );
-            if (sameAccount) {
-              console.log('[MediScribe] Offline: using cached verified subscription (valid until ' + cached.expiresAt + ').');
-              setIsActivated(true);
-              setLicenseDetails({ billing: cached.billing, expiresAt: cached.expiresAt, offlineCache: true });
-            } else {
-              setIsActivated(false);
-              setLicenseDetails(null);
-            }
-          } catch {
-            setIsActivated(false);
-            setLicenseDetails(null);
-          }
-        };
-
-        // If no authoritative snapshot arrives within 10s, assume we're offline.
-        offlineTimer = setTimeout(tryOfflineCache, 10000);
-
-        unsubscribeFirestore = onSnapshot(doc(db, "users", userDocKey), (docSnap: any) => {
-          // Snapshots served from the SDK's local cache are not authoritative —
-          // ignore them and let the offline fallback decide instead.
-          if (docSnap.metadata?.fromCache) return;
-
-          resolvedFromServer = true;
-          if (offlineTimer) clearTimeout(offlineTimer);
-
-          let userData = docSnap.exists() ? docSnap.data() : null;
-
-          const handleUserData = (data: any) => {
-            // Pro requires BOTH an activated flag AND an unexpired subscription.
-            // A subscription with a past expiresAt is treated as inactive even if
-            // isActivated was never flipped off in Firestore.
-            const notExpired = !data?.licenseDetails?.expiresAt ||
-              new Date(data.licenseDetails.expiresAt) > new Date();
-            const active = !!(data && data.isActivated && notExpired);
-            setIsActivated(active);
-
-            // 7-Day Free Trial handling
-            if (data && data.trialExpiresAt) {
-              setTrialExpiresAt(data.trialExpiresAt);
-            } else if (data && !data.isActivated && data.createdAt) {
-              const calcExpires = new Date(new Date(data.createdAt).getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-              setTrialExpiresAt(calcExpires);
-            } else {
-              setTrialExpiresAt(null);
-            }
-
-            if (data && data.licenseDetails) {
-              setLicenseDetails(data.licenseDetails);
-            } else {
-              setLicenseDetails(null);
-            }
-
-            // Persist this ONLINE-VERIFIED result for offline grace. The main
-            // process signs it and binds it to this machine; it self-expires
-            // at the subscription's expiresAt.
-            if (isElectron) {
-              (window.electron as any).saveSubscriptionCache?.({
-                email: currentUser,
-                uid: currentUserUid || '',
-                isActivated: active,
-                expiresAt: data?.licenseDetails?.expiresAt || null,
-                billing: data?.licenseDetails?.billing || null,
-              })?.catch?.(() => {});
-            }
-
-            // NOTE: the old local→Firestore license migration was removed here.
-            // It allowed unverified local license files (written by pre-v1.1.6
-            // builds that skipped payment verification) to be laundered into
-            // Firestore as paid licenses. Firestore is now the only source of
-            // truth for Pro activation.
-          };
-
-          if (!userData && currentUserUid && currentUserUid !== currentUser) {
-            // Check legacy email document ID
-            const emailDocRef = doc(db, "users", currentUser);
-            getDoc(emailDocRef).then((emailSnap) => {
-              if (emailSnap.exists()) {
-                handleUserData(emailSnap.data());
-              } else {
-                handleUserData(null);
-              }
-            }).catch(() => {
-              handleUserData(null);
-            });
-          } else {
-            handleUserData(userData);
-          }
-        }, (error: any) => {
-          console.error("Firestore sync error:", error);
-          tryOfflineCache();
-        });
-      } catch (err) {
-        console.error("Failed to start Firestore subscription listener:", err);
-      }
-    } else {
-      // Fallback: Check local activation status via Electron
-      if (isElectron) {
-        (window.electron as any).checkActivation?.().then((active: boolean) => {
-          setIsActivated(active);
-        }).catch(() => setIsActivated(false));
-
-        (window.electron as any).getLicenseDetails?.().then((details: any) => {
-          if (details) {
-            setLicenseDetails(details);
-          } else {
-            setLicenseDetails(null);
-          }
-        }).catch(() => {});
-      } else {
-        setIsActivated(false); // Non-Electron (web) users must subscribe
-      }
-    }
-
-    return () => {
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-      }
-      if (offlineTimer) {
-        clearTimeout(offlineTimer);
+    let cancelled = false;
+    if (!isMounted || !currentUserUid) { setIsActivated(false); return; }
+    setIsActivated(null); setLicenseDetails(null); setTrialExpiresAt(null);
+    const apply = (value: any) => {
+      if (cancelled) return;
+      setIsActivated(!!value?.isActivated && value.billing !== 'trial' && Date.parse(value.expiresAt) > Date.now());
+      setLicenseDetails(value?.licenseDetails || null);
+      setTrialExpiresAt(value?.trialExpiresAt || null);
+    };
+    const refresh = async () => {
+      try { apply(await refreshEntitlement()); }
+      catch {
+        const cached = isElectron ? await (window.electron as any).getSubscriptionCache?.(currentUserUid).catch(() => null) : null;
+        apply(cached);
       }
     };
-  }, [isMounted, isElectron, currentUser, currentUserUid, isLifetimeFree]);
+    void refresh();
+    const timer = setInterval(refresh, 60000);
+    window.addEventListener('online', refresh);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener('online', refresh); };
+  }, [isMounted, currentUserUid, isElectron]);
 
   // Track app launch / session
   useEffect(() => {
@@ -377,6 +226,8 @@ export function MediScribeApp() {
 
 
   const handleLogout = async () => {
+    if (auth) await signOut(auth);
+    setCurrentUserUid(null); setIsActivated(false); setLicenseDetails(null); setTrialExpiresAt(null); setIsAdminUser(false);
     // Always call googleLogout via Electron — this removes the device from
     // the cloud device registry (device_registry.json on Google Drive) so
     // the slot is freed for all users, whether they signed in with Google
@@ -452,6 +303,8 @@ export function MediScribeApp() {
     : 0;
   const isTrialExpired = !isActivated && !isLifetimeFree && !!trialExpiresAt && new Date(trialExpiresAt) <= new Date();
   const hasAccess = isActivated || isLifetimeFree || isTrialActive;
+
+  if (!hasAccess && isAdminUser) return <AdminSubscribersView key={currentUserUid} onBack={handleLogout} currentUser={currentUser} />;
 
   // Show Pricing View if no access (or trial expired)
   if (!hasAccess) {
@@ -544,7 +397,7 @@ export function MediScribeApp() {
     return (
       <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
         <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
-          <PricingView 
+          <PricingView key={currentUserUid}
             isActivated={isActivated}
             currentUser={currentUser}
             onBack={isSubscriptionExpired || isTrialExpired ? () => setShowPricingFromExpiration(false) : handleLogout}
@@ -560,10 +413,10 @@ export function MediScribeApp() {
     return (
       <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
         <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
-          <PricingView 
+          <PricingView key={currentUserUid}
             isActivated={isActivated}
             currentUser={currentUser}
-            onBack={() => setCurrentView('landing')} 
+            onBack={() => setCurrentView('landing')}
             backButtonText="Return to Dashboard"
           />
         </main>
@@ -701,7 +554,7 @@ export function MediScribeApp() {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                       <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Subscription Status</div>
                       <div className="flex items-center gap-2">
@@ -733,7 +586,7 @@ export function MediScribeApp() {
                           </>
                         )}
                       </div>
-                      
+
                       {!isLifetimeFree && isActivated && licenseDetails?.expiresAt && (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                           <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
@@ -936,8 +789,8 @@ export function MediScribeApp() {
 
       <main className="flex-1 flex flex-col items-center justify-center p-4 overflow-x-hidden w-full">
         {currentView === 'landing' && (
-          <LandingPage 
-            onSelectMode={(mode) => handleViewChange(mode)} 
+          <LandingPage
+            onSelectMode={(mode) => handleViewChange(mode)}
             onShowInstructions={() => setCurrentView('instructions')}
             onShowPricing={() => setCurrentView('pricing')}
           />
@@ -955,13 +808,13 @@ export function MediScribeApp() {
                 <ArrowLeft className="h-3 w-3" /> Back
               </Button>
             </div>
-            <DictationView isElectron={isElectron} />
+            <DictationView key={currentUserUid} isElectron={isElectron} />
           </div>
         )}
 
         {currentView === 'keyword' && (
           <div className="w-full max-w-6xl flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300 h-full">
-            <KeywordView
+            <KeywordView key={currentUserUid}
               isElectron={isElectron}
               onBack={() => setCurrentView('landing')}
               autoStart={autoStartView === 'keyword'}
@@ -987,7 +840,7 @@ export function MediScribeApp() {
                 ← Back
               </Button>
             </div>
-            <DictionaryManager />
+            <DictionaryManager key={currentUserUid} />
           </div>
         )}
 
@@ -997,7 +850,7 @@ export function MediScribeApp() {
 
         {currentView === 'templates' && (
           <div className="w-full max-w-4xl flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300 h-full">
-            <TemplateView
+            <TemplateView key={currentUserUid}
               isElectron={isElectron}
               onBack={() => setCurrentView('landing')}
               autoStart={autoStartView === 'templates'}
@@ -1007,7 +860,7 @@ export function MediScribeApp() {
         )}
 
         {currentView === 'admin-subscribers' && (
-          <AdminSubscribersView
+          <AdminSubscribersView key={currentUserUid}
             onBack={() => setCurrentView('landing')}
             currentUser={currentUser}
           />
@@ -1029,12 +882,12 @@ export function MediScribeApp() {
               MediScribe v1.1.2 is Here!
             </DialogTitle>
           </div>
-          
+
           <div className="p-6">
             <DialogDescription className="text-sm text-slate-600 dark:text-slate-300 mb-6 font-medium">
               We've been listening to your feedback. Here is what's new in the latest update:
             </DialogDescription>
-            
+
             <div className="flex flex-col gap-4">
               <div className="flex items-start gap-3">
                 <div className="h-8 w-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0 mt-0.5">
@@ -1045,7 +898,7 @@ export function MediScribeApp() {
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">Easily download, configure, and switch offline Whisper ASR and Ollama LLM models directly from the UI.</p>
                 </div>
               </div>
-              
+
               <div className="flex items-start gap-3">
                 <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-0.5">
                   <Maximize2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
@@ -1056,8 +909,8 @@ export function MediScribeApp() {
                 </div>
               </div>
             </div>
-            
-            <Button 
+
+            <Button
               className="w-full mt-8 h-12 rounded-xl cobalt-gradient text-white font-bold text-base shadow-lg shadow-violet-500/20 active:scale-[0.98] transition-all"
               onClick={() => {
                 localStorage.setItem('mediscribe_seen_v1.1.2_whatsnew', 'true');

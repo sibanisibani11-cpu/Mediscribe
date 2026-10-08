@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+def releaseCode = System.getenv('ANDROID_VERSION_CODE')
+def previousCode = System.getenv('ANDROID_PREVIOUS_VERSION_CODE')
+if (releaseRequested && (!releaseCode?.isInteger() || !previousCode?.isInteger() || releaseCode.toInteger() <= previousCode.toInteger() || releaseCode.toInteger() <= 0)) {
+    throw new GradleException('Set ANDROID_VERSION_CODE above the verified published ANDROID_PREVIOUS_VERSION_CODE')
+}
+if (releaseRequested && ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'ANDROID_VERSION_NAME'].any { !System.getenv(it) }) {
+    throw new GradleException('Android release signing and version name must be configured')
+}
 android {
     namespace = "com.mediapp.mediscribe"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +16,8 @@ android {
         applicationId "com.mediapp.mediscribe"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode releaseCode?.isInteger() ? releaseCode.toInteger() : 1
+        versionName System.getenv('ANDROID_VERSION_NAME') ?: "1.2.0-dev"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +25,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releaseRequested) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

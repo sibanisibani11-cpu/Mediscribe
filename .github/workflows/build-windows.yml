@@ -12,10 +12,13 @@ jobs:
     name: Build AppX (${{ matrix.arch }})
     runs-on: windows-latest
     env:
+      TARGET_PLATFORM: win32
+      TARGET_ARCH: x64
+      NATIVE_ASSET_MANIFEST: native-assets.json
       HAS_STORE_CREDS: ${{ secrets.PC_CLIENT_ID != '' && secrets.PC_CLIENT_SECRET != '' && secrets.PC_TENANT_ID != '' && secrets.PC_STORE_ID != '' }}
     strategy:
       matrix:
-        arch: [x64, arm64]
+        arch: [x64]
 
     steps:
       - name: Checkout repository
@@ -24,35 +27,26 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
-
-      # Write runtime secrets to .env so the packaged app can read Google OAuth credentials.
-      - name: Write .env file
+      - name: Load reviewed native asset pins
         shell: bash
+        env:
+          NATIVE_ASSET_PINS: ${{ vars.NATIVE_ASSET_PINS }}
         run: |
-          if [[ -z "${{ secrets.GOOGLE_CLIENT_ID }}" || -z "${{ secrets.GOOGLE_CLIENT_SECRET }}" ]]; then
-            echo "::error::GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET repo secrets are not set — the built app would ship without Google Sync credentials. Add them in GitHub → Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-          printf '%s\n' \
-            "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
-            "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-            "RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}" \
-            "RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}" \
-            "NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
-            "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
-            "NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
-            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
-            "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
-            "NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
-            "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
-            "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
-            > .env
-          echo ".env written successfully."
+          node -e 'const fs=require("fs");const pins=process.env.NATIVE_ASSET_PINS ? JSON.parse(process.env.NATIVE_ASSET_PINS) : JSON.parse(fs.readFileSync("docs/native-asset-pins.json"));fs.writeFileSync("native-assets.json",JSON.stringify(pins));'
+
+      - name: Install Windows native build toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix server
 
       # NEXT_PUBLIC_* vars are inlined at build time by Next.js — they MUST be present
       # here as env vars (the .env file alone is fragile since prebuild can rewrite it).
@@ -60,11 +54,15 @@ jobs:
         shell: bash
         run: |
           if [[ -z "$NEXT_PUBLIC_FIREBASE_API_KEY" ]]; then
-            echo "::error::NEXT_PUBLIC_FIREBASE_* repo secrets are not set. Without them the app ships in 'simulated mode' with per-machine (not per-user) licensing, letting any account on an activated machine use Pro for free. Add them in GitHub → Settings → Secrets and variables → Actions."
+            echo "::error::NEXT_PUBLIC_FIREBASE_* repo secrets are not set. The app requires Firebase authentication configuration. Add them in GitHub → Settings → Secrets and variables → Actions."
             exit 1
           fi
           npm run build
         env:
+          NEXT_PUBLIC_BACKEND_URL: ${{ vars.NEXT_PUBLIC_BACKEND_URL }}
+          ENTITLEMENT_PUBLIC_KEY: ${{ vars.ENTITLEMENT_PUBLIC_KEY }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ vars.GOOGLE_DESKTOP_CLIENT_SECRET }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
@@ -88,7 +86,6 @@ jobs:
 
       - name: Upload AppX artifact
         uses: actions/upload-artifact@v4
-        continue-on-error: true
         with:
           name: MediScribe-AppX-${{ matrix.arch }}
           path: dist-electron/*.appx
@@ -96,7 +93,7 @@ jobs:
           retention-days: 1
 
       - name: Publish to Microsoft Store
-        if: env.HAS_STORE_CREDS == 'true'
+        if: env.HAS_STORE_CREDS == 'true' && vars.RELEASE_APPROVED == 'true' && vars.NATIVE_SMOKE_TESTED_SHA == github.sha
         shell: bash
         env:
           PC_TENANT_ID: ${{ secrets.PC_TENANT_ID }}

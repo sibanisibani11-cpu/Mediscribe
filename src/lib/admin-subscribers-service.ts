@@ -2,6 +2,8 @@ export interface SubscriptionHistoryItem {
   id: string;
   paymentId: string;
   amount: number;
+  amountRefunded?: number;
+  netAmount?: number;
   currency: string;
   status: 'captured' | 'refunded' | 'failed' | 'authorized' | string;
   date: string;
@@ -40,6 +42,7 @@ export interface AdminSubscriberRecord {
   currency: string;
   source: string;
   history: SubscriptionHistoryItem[];
+  historyTruncated?: boolean;
 }
 
 export interface DownloadStats {
@@ -54,8 +57,8 @@ export interface DownloadStats {
     directExe: number;
   };
   sources?: {
-    github?: { windows: number; mac: number; linux: number; total: number };
-    msStore?: { total: number };
+    github?: { windows: number; mac: number; linux: number; total: number } | null;
+    msStore?: { total: number; startDate: string | null; endDate: string | null; syncedAt: string | null };
     website?: { windows: number; mac: number; linux: number; guest: number; loggedIn: number; total: number };
   };
   launches?: {
@@ -83,8 +86,11 @@ export interface AdminSubscribersResponse {
     refunded: number;
     free: number;
     totalRevenueINR: number;
+    scope?: 'page';
   };
+  pagination?: { limit: number; nextCursor: string | null; totalUsers: number };
   downloads?: DownloadStats;
+  operations?: { lastCompletedAt: string | null; openIssues: number; stale: boolean; lastChecked: number; lastFailed: number };
   error?: string;
 }
 
@@ -133,77 +139,5 @@ export function detectCountry(info: {
     return { name: found.name, code: info.cardCountry.toUpperCase(), flag: found.flag };
   }
 
-  const phone = (info.phone || '').replace(/[\s\-\(\)]/g, '');
-  if (phone.startsWith('+91') || (phone.startsWith('91') && phone.length >= 12)) {
-    return { name: 'India', code: 'IN', flag: '🇮🇳' };
-  }
-  if (phone.startsWith('+1') || (phone.startsWith('1') && phone.length === 11)) {
-    return { name: 'United States', code: 'US', flag: '🇺🇸' };
-  }
-  if (phone.startsWith('+44')) {
-    return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
-  }
-  if (phone.startsWith('+61')) {
-    return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
-  }
-  if (phone.startsWith('+971')) {
-    return { name: 'UAE', code: 'AE', flag: '🇦🇪' };
-  }
-  if (phone.startsWith('+966')) {
-    return { name: 'Saudi Arabia', code: 'SA', flag: '🇸🇦' };
-  }
-  if (phone.startsWith('+65')) {
-    return { name: 'Singapore', code: 'SG', flag: '🇸🇬' };
-  }
-  if (phone.startsWith('+49')) {
-    return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
-  }
-  if (phone.startsWith('+33')) {
-    return { name: 'France', code: 'FR', flag: '🇫🇷' };
-  }
-
-  const curr = (info.currency || '').toUpperCase();
-  if (curr === 'INR') {
-    return { name: 'India', code: 'IN', flag: '🇮🇳' };
-  }
-  if (curr === 'USD') {
-    return { name: 'United States', code: 'US', flag: '🇺🇸' };
-  }
-  if (curr === 'GBP') {
-    return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
-  }
-  if (curr === 'EUR') {
-    return { name: 'Europe', code: 'EU', flag: '🇪🇺' };
-  }
-  if (curr === 'AUD') {
-    return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
-  }
-  if (curr === 'CAD') {
-    return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
-  }
-
-  const email = (info.email || '').toLowerCase();
-  if (
-    email.endsWith('.in') ||
-    email.endsWith('.edu.in') ||
-    email.endsWith('.co.in') ||
-    email.endsWith('.gov.in') ||
-    email.includes('aiims.edu')
-  ) {
-    return { name: 'India', code: 'IN', flag: '🇮🇳' };
-  }
-  if (email.endsWith('.uk') || email.endsWith('.co.uk') || email.endsWith('.nhs.uk')) {
-    return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
-  }
-  if (email.endsWith('.au') || email.endsWith('.com.au')) {
-    return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
-  }
-  if (email.endsWith('.ca')) {
-    return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
-  }
-  if (email.endsWith('.de')) {
-    return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
-  }
-
-  return { name: 'India', code: 'IN', flag: '🇮🇳' };
+  return { name: 'Unknown', code: '', flag: '🌐' };
 }

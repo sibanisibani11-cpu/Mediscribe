@@ -20,6 +20,11 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
   const [recordingState, setRecordingState] = useState<RecordingState>("idle");
   const [ollamaEnabled, setOllamaEnabled] = useState(true);
   const [resultText, setResultText] = useState("");
+  const [originalText, setOriginalText] = useState("");
+  const [needsReview, setNeedsReview] = useState(false);
+  const [isInserting, setIsInserting] = useState(false);
+  const disposed = useRef(false);
+  const inserting = useRef(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -80,6 +85,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
     isStoppingRef.current = false;
     audioChunksRef.current = [];
     setResultText("");
+    setOriginalText(""); setNeedsReview(false);
 
     toast({
       title: "Recording Started",
@@ -96,6 +102,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (disposed.current) { stopTracks(stream); return; }
 
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
@@ -113,6 +120,8 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         };
 
         mediaRecorder.onstop = async () => {
+          stopTracks(stream);
+          if (disposed.current) return;
           const chunksToProcess = [...audioChunksRef.current];
           audioChunksRef.current = [];
 
@@ -148,7 +157,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         await (window.electron as any).showFloatingButton?.();
         setTimeout(() => {
           console.log("[MediScribe] Minimizing main window");
-          (window.electron as any).minimizeWindow?.();
+          if (!disposed.current) (window.electron as any).minimizeWindow?.();
         }, 500);
 
       } catch (error) {
@@ -206,18 +215,8 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
           playBeep(true);
           setRecordingState("recording");
         } else {
-          // Fallback if no Web Speech API
-          playBeep(true);
-          setRecordingState("recording");
-          const timer = setTimeout(() => {
-            setResultText("Patient is a 45-year-old male presenting with complaints of chronic back pain. Plan: Recommend physical therapy and scheduling an MRI scan.");
-            setRecordingState("done");
-            toast({
-              title: "Demo Transcription Loaded",
-              description: "Web Speech API is not supported in this client. Loaded mock medical note."
-            });
-          }, 3000);
-          (window as any)._mockTimer = timer;
+          setRecordingState('idle');
+          toast({ variant: 'destructive', title: 'Speech recognition unavailable', description: 'Use a supported browser or the MediScribe desktop app.' });
         }
       } catch (err) {
         console.error("Speech recognition startup error:", err);
@@ -278,12 +277,17 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
       const arrayBuffer = await audioBlob.arrayBuffer();
       if (isElectron) {
         const result = await (window.electron as any).transcribeAudio(Array.from(new Uint8Array(arrayBuffer)));
+        if (disposed.current) return;
         if (result.success) {
           const text = result.text?.trim() || '';
           if (text) {
-            await (window.electron as any).typeText?.(text, false);
-            trackDictationCompleted({ modelUsed: 'whisper' });
-            toast({ title: "Text typed successfully" });
+            const original = result.originalText || text;
+            setResultText(text); setOriginalText(original);
+            if (text !== original) {
+              setNeedsReview(true);
+              await (window.electron as any).restoreMainWindow?.();
+              toast({ title: 'Review suggested spelling changes', description: 'Compare with the original transcript, then choose what to insert.' });
+            } else await insertTranscript(text);
           } else {
             finalState = "idle";
           }
@@ -314,9 +318,27 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
     }
   };
 
-  const handleCopy = () => {
+  const insertTranscript = async (text: string) => {
+    if (disposed.current || inserting.current) return;
+    inserting.current = true;
+    setIsInserting(true);
+    try {
+      const insertion = await (window.electron as any).typeText?.(text, false);
+      if (!insertion?.success) throw new Error(insertion?.error || 'Could not insert text. Copy the retained transcript or retry.');
+      if (!disposed.current) { setNeedsReview(false); setResultText(text); }
+      trackDictationCompleted({ modelUsed: 'whisper' });
+      toast({ title: 'Text typed successfully' });
+    } catch (error) {
+      await (window.electron as any).restoreMainWindow?.();
+      toast({ variant: 'destructive', title: 'Insertion failed', description: error instanceof Error ? error.message : 'Copy the retained transcript or retry.' });
+    } finally { inserting.current = false; if (!disposed.current) setIsInserting(false); }
+  };
+
+  const handleCopy = async () => {
     if (!resultText) return;
-    navigator.clipboard.writeText(resultText);
+    try { await navigator.clipboard.writeText(resultText); } catch {
+      toast({ variant: "destructive", title: "Copy failed", description: "Select the transcript and copy it manually." }); return;
+    }
     toast({
       title: "Copied to Clipboard",
       description: "You can now paste the text into any application.",
@@ -387,9 +409,16 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
   }, [handleToggle]);
 
   useEffect(() => {
-    if (!isElectron || !window.electron) return;
-
+    disposed.current = false;
     const handleAppQuitting = () => {
+      disposed.current = true;
+      if (recognitionRef.current) {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
       isStoppingRef.current = true;
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try {
@@ -403,8 +432,9 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
       audioChunksRef.current = [];
     };
 
-    (window.electron as any).onAppQuitting?.(handleAppQuitting);
+    const unsubscribe = (window.electron as any)?.onAppQuitting?.(handleAppQuitting);
     return () => {
+      unsubscribe?.();
       handleAppQuitting();
     };
   }, []);
@@ -460,19 +490,29 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         )}
       </div>
 
-      {!isElectron && resultText && (
+      {resultText && (
         <div className="glass-card rounded-xl p-5 space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Transcribed Output</h4>
             <span className="text-[10px] text-emerald-500 font-bold bg-emerald-100/30 px-2 py-0.5 rounded-full">Active</span>
           </div>
           
+          {needsReview && <p className="text-sm">Spelling suggestions need your review before insertion.</p>}
           <textarea
+            aria-label="Transcript"
             value={resultText}
             onChange={(e) => setResultText(e.target.value)}
             className="w-full min-h-[120px] p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-black/20 text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500/30"
           />
           
+          {isElectron && <Button disabled={isInserting} onClick={() => insertTranscript(resultText)} className="w-full">
+            {isInserting ? 'Inserting…' : needsReview ? 'Accept and insert' : 'Insert transcript'}
+          </Button>}
+          {originalText && originalText !== resultText && <details className="text-sm">
+            <summary>Original transcript</summary>
+            <p className="whitespace-pre-wrap py-3">{originalText}</p>
+            <Button variant="outline" disabled={isInserting} onClick={() => insertTranscript(originalText)}>Insert original</Button>
+          </details>}
           <div className="flex gap-3">
             <Button onClick={handleCopy} className="flex-1 text-xs gap-1.5 h-10 font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-sm">
               <Copy className="h-3.5 w-3.5" />

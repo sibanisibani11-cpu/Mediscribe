@@ -5,14 +5,14 @@ import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
-import { auth, db, isFirebaseConfigured } from "../lib/firebase";
+import { auth, isFirebaseConfigured } from "../lib/firebase";
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword, 
     GoogleAuthProvider, 
-    signInWithCredential 
+    signInWithCredential, signInWithPopup, sendPasswordResetEmail
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+
 
 interface AuthPageProps {
     onLogin: (user: string, uid?: string) => void;
@@ -26,248 +26,46 @@ export function AuthPage({ onLogin }: AuthPageProps) {
     const [password, setPassword] = useState("");
     const { toast } = useToast();
 
+    const requireAuth = () => {
+        if (!isFirebaseConfigured || !auth) throw new Error('Sign-in is unavailable. Please contact support@mediapp.store.');
+        return auth;
+    };
     const handleAuth = async (e: React.FormEvent) => {
-        e.preventDefault();
-
-        if (!email || !password) {
-            toast({
-                variant: "destructive",
-                title: "Validation Error",
-                description: "Please enter both email and password.",
-            });
-            return;
-        }
-
-        setIsLoading(true);
-
+        e.preventDefault(); setIsLoading(true);
         try {
-            const normalizedEmail = email.toLowerCase().trim();
-            const isTestAccount = (normalizedEmail === 'test@mediapp.store' || normalizedEmail === 'reviewer@mediapp.store') && password === 'Password123!';
-
-            // Check local simulated signin / test account credentials first (allows MS Store reviewers and local test accounts)
-            if (isLogin) {
-                if ((window as any).electron?.localSimSignin) {
-                    const check = await (window as any).electron.localSimSignin(email, password);
-                    if (check && check.success) {
-                        toast({
-                            title: "Welcome back!",
-                            description: "You have successfully logged in.",
-                        });
-                        onLogin(email, email);
-                        return;
-                    }
-                } else if (isTestAccount) {
-                    toast({
-                        title: "Welcome back!",
-                        description: "You have successfully logged in.",
-                    });
-                    onLogin(email, email);
-                    return;
-                }
-            }
-
-            if (isFirebaseConfigured && auth && db) {
-                let uid = "";
-                const now = new Date();
-                const trialExpires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-                if (isLogin) {
-                    // Sign In
-                    const credential = await signInWithEmailAndPassword(auth, email, password);
-                    uid = credential.user.uid;
-
-                    // Fetch user document from Firestore using UID to ensure it exists
-                    const userDocRef = doc(db, "users", uid);
-                    const docSnap = await getDoc(userDocRef);
-                    if (!docSnap.exists()) {
-                        await setDoc(userDocRef, {
-                            email: email,
-                            isActivated: false,
-                            trialStartedAt: now.toISOString(),
-                            trialExpiresAt: trialExpires.toISOString(),
-                            trialPlan: '7_day_trial',
-                            createdAt: now.toISOString()
-                        });
-                    } else {
-                        const existingData = docSnap.data();
-                        // If user doesn't have trial details yet and is not activated, grant 7-day trial from createdAt or now
-                        if (!existingData.trialExpiresAt && !existingData.isActivated) {
-                            const userCreated = existingData.createdAt ? new Date(existingData.createdAt) : now;
-                            const calcExpires = new Date(userCreated.getTime() + 7 * 24 * 60 * 60 * 1000);
-                            await setDoc(userDocRef, {
-                                trialStartedAt: userCreated.toISOString(),
-                                trialExpiresAt: calcExpires.toISOString(),
-                                trialPlan: '7_day_trial',
-                            }, { merge: true });
-                        }
-                    }
-
-                    toast({
-                        title: "Welcome back!",
-                        description: "You have successfully logged in.",
-                    });
-                } else {
-                    // Sign Up
-                    const credential = await createUserWithEmailAndPassword(auth, email, password);
-                    uid = credential.user.uid;
-
-                    // Create user document in Firestore with 7-Day Free Trial by default using UID
-                    const userDocRef = doc(db, "users", uid);
-                    await setDoc(userDocRef, {
-                        email: email,
-                        isActivated: false,
-                        trialStartedAt: now.toISOString(),
-                        trialExpiresAt: trialExpires.toISOString(),
-                        trialPlan: '7_day_trial',
-                        createdAt: now.toISOString()
-                    });
-
-                    toast({
-                        title: "🎉 Account Created!",
-                        description: "Your 7-Day Free Trial is now active with full Pro access.",
-                    });
-                }
-                onLogin(email, uid);
-            } else {
-                // Fallback / Simulated mode: Look up in local accounts database via IPC
-                await new Promise(resolve => setTimeout(resolve, 800));
-
-                if (isLogin) {
-                    const check = await (window as any).electron?.localSimSignin?.(email, password);
-                    if (check && check.success) {
-                        toast({
-                            title: "Welcome back! (Simulated)",
-                            description: "You have successfully logged in.",
-                        });
-                        onLogin(email, email);
-                    } else {
-                        throw new Error(check?.error || "Invalid email or password.");
-                    }
-                } else {
-                    const result = await (window as any).electron?.localSimSignup?.(email, password);
-                    if (result && result.success) {
-                        toast({
-                            title: "🎉 Account Created!",
-                            description: "Your 7-Day Free Trial is now active with full Pro access.",
-                        });
-                        onLogin(email, email);
-                    } else {
-                        throw new Error(result?.error || "Failed to register local user.");
-                    }
-                }
-            }
+            const provider = requireAuth();
+            const credential = await (isLogin ? signInWithEmailAndPassword : createUserWithEmailAndPassword)(provider, email.trim(), password);
+            onLogin(credential.user.email || email.trim(), credential.user.uid);
         } catch (error: any) {
-            console.error("Authentication failed:", error);
-            let errorMessage = error.message || "Something went wrong. Please try again.";
-            if (error.code === "auth/invalid-credential" || error.code === "auth/wrong-password" || error.code === "auth/user-not-found") {
-                errorMessage = "Invalid email address or password.";
-            } else if (error.code === "auth/email-already-in-use") {
-                errorMessage = "This email is already registered. Please log in instead.";
-            } else if (error.code === "auth/weak-password") {
-                errorMessage = "Password should be at least 6 characters.";
-            } else if (error.code === "auth/invalid-email") {
-                errorMessage = "Please enter a valid email address.";
-            }
-            toast({
-                variant: "destructive",
-                title: "Authentication Failed",
-                description: errorMessage,
-            });
-        } finally {
-            setIsLoading(false);
-        }
+            toast({ variant: 'destructive', title: 'Authentication Failed', description: error.code?.includes('credential') ? 'Invalid email or password.' : error.message });
+        } finally { setIsLoading(false); }
     };
-
-    const handleSocialLogin = async (provider: "Google") => {
+    const handleSocialLogin = async (_provider: 'Google') => {
         setIsLoading(true);
-
         try {
-            if (provider === "Google" && (window as any).electron?.googleLogin) {
+            const provider = requireAuth();
+            let credential;
+            if ((window as any).electron?.googleLogin) {
                 const result = await (window as any).electron.googleLogin();
-                if (result.success) {
-                    let uid = "";
-                    if (isFirebaseConfigured && auth && db) {
-                        try {
-                            const now = new Date();
-                            const trialExpires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-                            if (result.idToken) {
-                                const credential = GoogleAuthProvider.credential(result.idToken);
-                                const userCredential = await signInWithCredential(auth, credential);
-                                uid = userCredential.user.uid;
-                            }
-
-                            // Ensure firestore user document exists using UID
-                            const userDocRef = doc(db, "users", uid || result.user);
-                            const userDoc = await getDoc(userDocRef);
-                            if (!userDoc.exists()) {
-                                await setDoc(userDocRef, {
-                                    email: result.user,
-                                    isActivated: false,
-                                    trialStartedAt: now.toISOString(),
-                                    trialExpiresAt: trialExpires.toISOString(),
-                                    trialPlan: '7_day_trial',
-                                    createdAt: now.toISOString()
-                                });
-                            } else {
-                                const existingData = userDoc.data();
-                                if (!existingData.trialExpiresAt && !existingData.isActivated) {
-                                    const userCreated = existingData.createdAt ? new Date(existingData.createdAt) : now;
-                                    const calcExpires = new Date(userCreated.getTime() + 7 * 24 * 60 * 60 * 1000);
-                                    await setDoc(userDocRef, {
-                                        trialStartedAt: userCreated.toISOString(),
-                                        trialExpiresAt: calcExpires.toISOString(),
-                                        trialPlan: '7_day_trial',
-                                    }, { merge: true });
-                                }
-                            }
-                        } catch (firebaseErr) {
-                            console.error("Firebase Signin with Google failed:", firebaseErr);
-                        }
-                    }
-
-                    toast({
-                        title: `Connected with ${provider}`,
-                        description: "Successfully authenticated via secure redirect.",
-                    });
-                    onLogin(result.user || `${provider} User`, uid || result.user);
-                } else {
-                    throw new Error(result.error || "Login cancelled or failed.");
-                }
+                if (!result.success || !result.idToken) throw new Error('Google sign-in did not complete.');
+                credential = await signInWithCredential(provider, GoogleAuthProvider.credential(result.idToken));
             } else {
-                setTimeout(() => {
-                    setIsLoading(false);
-                    toast({
-                        title: `Connected with ${provider} (Simulated)`,
-                        description: "Successfully authenticated.",
-                    });
-                    onLogin(`${provider} User`);
-                }, 1500);
+                credential = await signInWithPopup(provider, new GoogleAuthProvider());
             }
+            onLogin(credential.user.email || '', credential.user.uid);
         } catch (error: any) {
-            toast({
-                variant: "destructive",
-                title: "Authentication Failed",
-                description: error.message || "The authentication window was closed or failed to connect.",
-            });
-        } finally {
-            setIsLoading(false);
-        }
+            toast({ variant: 'destructive', title: 'Authentication Failed', description: error.message });
+        } finally { setIsLoading(false); }
     };
-
-    const handleForgotPassword = () => {
-        if (!email) {
-            toast({
-                variant: "destructive",
-                title: "Email Required",
-                description: "Please enter your email address to reset your password.",
-            });
-            return;
-        }
-        toast({
-            title: "Reset Link Sent",
-            description: `A password reset link has been sent to ${email}`,
-        });
+    const handleForgotPassword = async () => {
+        if (!email.trim()) { toast({ variant: 'destructive', title: 'Email Required', description: 'Enter your email address first.' }); return; }
+        setIsLoading(true);
+        try {
+            await sendPasswordResetEmail(requireAuth(), email.trim());
+            toast({ title: 'Reset Requested', description: 'If this address has an account, you will receive a password reset email.' });
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Reset Failed', description: error.message || 'Please try again.' });
+        } finally { setIsLoading(false); }
     };
 
     return (

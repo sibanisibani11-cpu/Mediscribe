@@ -5,8 +5,9 @@ import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
 import { cn, openExternalUrl } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
-import { auth, db, isFirebaseConfigured } from "../lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { auth } from "../lib/firebase";
+import { backendRequest, backendConfigured, getInstallationId, refreshEntitlement } from "../lib/backend";
+
 import { trackProActivation } from "../lib/tracker";
 
 interface PricingViewProps {
@@ -39,38 +40,6 @@ const PROMO_CODES: Record<string, { discount: number; label: string }> = {
   "CLINIC30":  { discount: 30, label: "30% Clinic Discount" },
 };
 
-const RAZORPAY_SCRIPT_URL = 'https://checkout.razorpay.com/v1/checkout.js';
-
-function loadRazorpay(): Promise<boolean> {
-  return new Promise((resolve) => {
-    // Already loaded
-    if ((window as any).Razorpay) {
-      resolve(true);
-      return;
-    }
-
-    // Script already injected — wait for it
-    const existing = document.querySelector(`script[src="${RAZORPAY_SCRIPT_URL}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve(!!(window as any).Razorpay));
-      existing.addEventListener('error', () => resolve(false));
-      // Timeout fallback
-      setTimeout(() => resolve(false), 10000);
-      return;
-    }
-
-    // Inject the script fresh
-    const script = document.createElement('script');
-    script.src = RAZORPAY_SCRIPT_URL;
-    script.async = true;
-    script.onload = () => resolve(!!(window as any).Razorpay);
-    script.onerror = () => resolve(false);
-    document.head.appendChild(script);
-    // Timeout fallback for fresh load
-    setTimeout(() => resolve(false), 10000);
-  });
-}
-
 export function PricingView({ onBack, isActivated, currentUser, backButtonText }: PricingViewProps) {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
@@ -98,12 +67,8 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
 
     setIsVerifyingPayment(true);
     try {
-      const result = await (window as any).electron?.activateAfterPayment?.({
-        payment_id: paymentId,
-        owner_email: currentUser || auth?.currentUser?.email || '',
-        owner_uid: auth?.currentUser?.uid || '',
-      });
-
+      const entitlement = await refreshEntitlement(paymentId);
+      const result = { success: entitlement.isActivated && entitlement.billing !== 'trial' && Date.parse(entitlement.expiresAt) > Date.now(), error: 'Payment checked, but no active paid license remains. The payment may be refunded or its access period expired.' };
       if (result?.success) {
         // Log Pro activation event
         trackProActivation({
@@ -154,241 +119,52 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
   const removePromo = () => { setAppliedPromo(null); setPromoCode(""); setPromoError(""); };
 
   const getDiscountedPrice = (base: number) =>
-    appliedPromo ? Math.round(base * (1 - appliedPromo.discount / 100)) : base;
+    appliedPromo ? Math.round(base * 100 * (1 - appliedPromo.discount / 100)) / 100 : base;
 
   useEffect(() => {
-    // Pre-load Razorpay script as soon as Pricing view mounts
-    loadRazorpay();
-
-    // Get Hardware ID for payment linking
-    if (typeof window !== 'undefined' && (window as any).electron) {
-        (window as any).electron.getActivationId().then(setActivationID);
-        (window as any).electron.getLicenseDetails?.().then((details: any) => {
-            if (details && details.billing) setCurrentPlan(details.billing);
-            if (details && details.expiresAt) {
-                const diff = new Date(details.expiresAt).getTime() - new Date().getTime();
-                setDaysRemaining(Math.ceil(diff / (1000 * 3600 * 24)));
-            }
-        });
-    }
-
-    // Auto-detect currency
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (timezone.includes('America')) {
-      setCurrency(CURRENCIES.find(c => c.code === 'USD') || CURRENCIES[0]);
-    } else if (timezone.includes('Europe')) {
-      if (timezone.includes('London')) {
-        setCurrency(CURRENCIES.find(c => c.code === 'GBP') || CURRENCIES[0]);
-      } else {
-        setCurrency(CURRENCIES.find(c => c.code === 'EUR') || CURRENCIES[0]);
-      }
-    } else if (timezone.includes('Calcutta') || timezone.includes('Asia/Kolkata')) {
-      setCurrency(CURRENCIES.find(c => c.code === 'INR') || CURRENCIES[0]);
-    }
+    void refreshEntitlement().then(value => {
+      setCurrentPlan(value.licenseDetails?.billing || null);
+      if (value.expiresAt) setDaysRemaining(Math.ceil((Date.parse(value.expiresAt) - Date.now()) / 86400000));
+    }).catch(() => {});
+    void getInstallationId().then(setActivationID);
   }, []);
 
+  const checkPendingOrder = async () => {
+    const key = 'mediscribe_pending_order_' + auth?.currentUser?.uid;
+    const orderId = localStorage.getItem(key);
+    if (!orderId) return false;
+    const status = await backendRequest('/v1/orders/status', { orderId, deviceId: await getInstallationId() });
+    if (!status.fulfilled) return false;
+    await refreshEntitlement();
+    localStorage.removeItem(key);
+    window.location.reload();
+    return true;
+  };
+  useEffect(() => {
+    if (!backendConfigured) return;
+    const retry = () => { void checkPendingOrder().catch(() => {}); };
+    retry();
+    const timer = setInterval(retry, 10000);
+    window.addEventListener('focus', retry);
+    return () => { clearInterval(timer); window.removeEventListener('focus', retry); };
+  }, []);
 
   const handleRazorpayPayment = async (planId: string) => {
     setIsLoading(planId);
-    
+    const popup = !(window as any).electron ? window.open('about:blank', '_blank') : null;
     try {
-        // Prevent duplicate subscriptions if already activated
-        if (typeof window !== 'undefined' && (window as any).electron) {
-            try {
-                if ((window as any).electron.getLicenseDetails) {
-                    const licenseDetails = await (window as any).electron.getLicenseDetails();
-                    if (licenseDetails) {
-                        const currentBilling = licenseDetails.billing || 'monthly';
-                        const targetBilling = planId === 'yearly' ? 'yearly' : 'monthly';
-                        
-                        if (currentBilling === targetBilling) {
-                            if (daysRemaining !== null && daysRemaining <= 7) {
-                                // Allow renewal! Proceed to Razorpay.
-                            } else {
-                                toast({
-                                    title: "Already Subscribed",
-                                    description: `You are already subscribed to the ${targetBilling} plan. You can renew when less than 7 days remain.`,
-                                });
-                                setIsLoading(null);
-                                return;
-                            }
-                        }
-                    } else if (isActivated) {
-                        // Fallback: If getLicenseDetails returns null but isActivated is true
-                        toast({
-                            title: "Already Subscribed",
-                            description: "You have an active subscription. Please manage it from your account.",
-                        });
-                        setIsLoading(null);
-                        return;
-                    }
-                } else if (isActivated) {
-                    toast({
-                        title: "Already Subscribed",
-                        description: "You have an active subscription.",
-                    });
-                    setIsLoading(null);
-                    return;
-                }
-            } catch (e) {
-                console.error("[MediScribe] Error checking license details", e);
-                if (isActivated) {
-                    toast({
-                        title: "Already Subscribed",
-                        description: "You already have an active subscription.",
-                    });
-                    setIsLoading(null);
-                    return;
-                }
-            }
-        } else if (isActivated) {
-            toast({
-                title: "Already Subscribed",
-                description: "You already have an active subscription.",
-            });
-            setIsLoading(null);
-            return;
-        }
-
-        const baseAmount = planId === 'yearly' ? currency.yearly : currency.monthly;
-        const amount = getDiscountedPrice(baseAmount);
-
-        // Dynamically load Razorpay SDK if not already present
-        const razorpayReady = await loadRazorpay();
-        if (!razorpayReady) {
-            toast({
-                variant: "destructive",
-                title: "Payment Gateway Not Ready",
-                description: "Could not load payment gateway. Please check your internet connection and try again.",
-            });
-            setIsLoading(null);
-            return;
-        }
-
-        const options = {
-            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_SiXmXO4YoPaPyF",
-            amount: amount * 100, // Amount in paise / cents
-            currency: currency.code,
-            name: "MediScribe Pro",
-            description: `${planId === 'yearly' ? 'Annual' : 'Monthly'} Subscription`,
-            image: "https://mediapp.store/logo.png",
-            handler: async function (response: any) {
-                // Payment captured by Razorpay — now activate the license via Electron
-                console.log("[MediScribe] Razorpay payment captured:", response.razorpay_payment_id);
-                
-                setIsLoading('activating');
-                toast({
-                    title: "Payment Received!",
-                    description: "Activating your Pro license...",
-                });
-
-                try {
-                    const result = await (window as any).electron?.activateAfterPayment?.({
-                        payment_id: response.razorpay_payment_id,
-                        plan_id: planId,
-                        billing: planId === 'yearly' ? 'yearly' : 'monthly',
-                        currency: currency.code,
-                        amount: amount,
-                        activation_id: activationId,
-                        owner_email: currentUser || auth?.currentUser?.email || '',
-                        owner_uid: auth?.currentUser?.uid || '',
-                    });
-
-                    if (result?.success) {
-                        if (isFirebaseConfigured && db && currentUser) {
-                            try {
-                                const expiresAt = new Date();
-                                if (planId === 'yearly') {
-                                    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-                                } else {
-                                    expiresAt.setMonth(expiresAt.getMonth() + 1);
-                                }
-                                const licenseDetails = {
-                                    billing: planId === 'yearly' ? 'yearly' : 'monthly',
-                                    expiresAt: expiresAt.toISOString(),
-                                    date: new Date().toISOString(),
-                                    hwid: activationId,
-                                };
-                                const userKey = (auth && auth.currentUser) ? auth.currentUser.uid : currentUser;
-                                if (userKey) {
-                                    const userDocRef = doc(db, "users", userKey);
-                                    await setDoc(userDocRef, {
-                                        isActivated: true,
-                                        licenseDetails: licenseDetails
-                                    }, { merge: true });
-                                }
-                            } catch (firestoreErr) {
-                                console.error("Failed to write subscription info to Firestore:", firestoreErr);
-                            }
-                        }
-
-                        // Log Pro activation event
-                        trackProActivation({
-                            hwid: activationId || null,
-                            email: currentUser || auth?.currentUser?.email || null,
-                            plan: planId === 'yearly' ? 'yearly' : 'monthly',
-                            amount: amount,
-                            currency: currency.code,
-                            paymentId: response.razorpay_payment_id,
-                        });
-
-                        toast({
-                            title: "🎉 Pro License Activated!",
-                            description: "Welcome to MediScribe Pro. Reloading now...",
-                        });
-                        // Reload so the app re-checks activation status
-                        setTimeout(() => window.location.reload(), 1500);
-                    } else {
-                        toast({
-                            variant: "destructive",
-                            title: "Activation Issue",
-                            description: result?.error || "Payment was successful but license activation failed. Please contact support@mediapp.store with your Transaction ID: " + response.razorpay_payment_id,
-                        });
-                        setIsLoading(null);
-                    }
-                } catch (err) {
-                    console.error("[MediScribe] Activation error:", err);
-                    toast({
-                        variant: "destructive",
-                        title: "Activation Error",
-                        description: `Payment successful (ID: ${response.razorpay_payment_id}). Please email support@mediapp.store to manually activate your license.`,
-                    });
-                    setIsLoading(null);
-                }
-            },
-            prefill: {
-                name: "Doctor",
-                email: currentUser || auth?.currentUser?.email || "",
-            },
-            notes: {
-                activation_id: activationId,
-                plan_id: planId,
-                billing: planId === 'yearly' ? 'yearly' : 'monthly',
-                app: 'MediScribe',
-            },
-            theme: {
-                color: "#7c3aed",
-            },
-            modal: {
-                ondismiss: function() {
-                    setIsLoading(null);
-                }
-            }
-        };
-
-        const rzp = new (window as any).Razorpay(options);
-        rzp.open();
+      if (await checkPendingOrder()) { popup?.close(); return; }
+      const order = await backendRequest('/v1/orders', { plan: planId, currency: currency.code, promo: appliedPromo?.code || '', deviceId: await getInstallationId() });
+      localStorage.setItem('mediscribe_pending_order_' + auth?.currentUser?.uid, order.orderId);
+      const url = process.env.NEXT_PUBLIC_BACKEND_URL!.replace(/\/$/, '') + '/checkout?order=' + encodeURIComponent(order.orderId);
+      if ((window as any).electron) await (window as any).electron.openCheckout(url);
+      else if (popup) { popup.opener = null; popup.location.href = url; }
+      else throw new Error('Allow popups to open secure checkout.');
+      toast({ title: 'Checkout opened', description: 'Complete payment in the secure checkout window and return here. Access will update automatically. If already paid, do not pay again; use Check Payment Status.' });
     } catch (error: any) {
-        console.error("[MediScribe] Payment Error:", error?.message || error);
-        toast({
-            variant: "destructive",
-            title: "Payment Failed",
-            description: error?.message
-                ? `Error: ${error.message}. Please try again.`
-                : "Unable to open checkout. Please check your internet connection.",
-        });
-        setIsLoading(null);
-    }
+      popup?.close();
+      toast({ variant: 'destructive', title: 'Checkout unavailable', description: error.message });
+    } finally { setIsLoading(null); }
   };
 
   const plans = [
@@ -420,7 +196,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
       description: "The best value for individual practitioners and small clinics.",
       features: [
         "Everything in Monthly",
-        `Save ${currency.symbol}${currency.monthly * 2} vs Monthly Billing`,
+        `Save ${currency.symbol}${Number((getDiscountedPrice(currency.monthly) * 12 - getDiscountedPrice(currency.yearly)).toFixed(2))} vs Monthly Billing`,
         "Priority AI Processing",
         "Early Access to New Features",
         "Priority Support",
@@ -520,6 +296,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
         </div>
       </div>
 
+      {!backendConfigured && <p role="status">Purchases are temporarily unavailable. Please contact support@mediapp.store.</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
         {plans.map((plan) => (
           <div
@@ -577,7 +354,7 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
 
             <Button
               onClick={() => handleRazorpayPayment(plan.id)}
-              disabled={isLoading !== null || (!((daysRemaining !== null && daysRemaining <= 7)) && currentPlan === plan.id) || (!!isActivated && !currentPlan)}
+              disabled={!backendConfigured || isLoading !== null || (!((daysRemaining !== null && daysRemaining <= 7)) && currentPlan === plan.id)}
               className={cn(
                 "w-full h-14 rounded-2xl font-black text-lg transition-all shadow-xl flex items-center justify-center gap-2",
                 plan.popular 

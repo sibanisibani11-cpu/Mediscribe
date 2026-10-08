@@ -2,6 +2,8 @@ name: Build Cross-Platform Installers
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches:
       - main
@@ -18,6 +20,10 @@ jobs:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      TARGET_PLATFORM: ${{ matrix.target_platform }}
+      TARGET_ARCH: ${{ matrix.arch }}
+      NATIVE_ASSET_MANIFEST: native-assets.json
     strategy:
       fail-fast: false
       matrix:
@@ -25,25 +31,48 @@ jobs:
           - os: windows-latest
             platform: win
             target_platform: win32
+            arch: x64
           - os: macos-latest
             platform: mac
             target_platform: darwin
+            arch: arm64
+          - os: macos-15-intel
+            platform: mac
+            target_platform: darwin
+            arch: x64
           - os: ubuntu-latest
             platform: linux
             target_platform: linux
+            arch: x64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
+      - name: Load reviewed native asset pins
+        shell: bash
+        env:
+          NATIVE_ASSET_PINS: ${{ vars.NATIVE_ASSET_PINS }}
+        run: |
+          node -e 'const fs=require("fs");const pins=process.env.NATIVE_ASSET_PINS ? JSON.parse(process.env.NATIVE_ASSET_PINS) : JSON.parse(fs.readFileSync("docs/native-asset-pins.json"));fs.writeFileSync("native-assets.json",JSON.stringify(pins));'
+
+      - name: Install Windows native build toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: make mingw-w64-x86_64-gcc
+
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+        run: |
+          npm ci
+          npm ci --prefix server
 
       - name: Generate platform icons
         run: node scripts/generate-icons.js
@@ -54,12 +83,16 @@ jobs:
         shell: bash
         run: |
           if [[ -z "$NEXT_PUBLIC_FIREBASE_API_KEY" ]]; then
-            echo "::error::NEXT_PUBLIC_FIREBASE_* repo secrets are not set. Without them the app ships in 'simulated mode' with per-machine (not per-user) licensing, letting any account on an activated machine use Pro for free. Add them in GitHub → Settings → Secrets and variables → Actions."
+            echo "::error::NEXT_PUBLIC_FIREBASE_* repo secrets are not set. The app requires Firebase authentication configuration. Add them in GitHub → Settings → Secrets and variables → Actions."
             exit 1
           fi
           npm run build
         env:
           SKIP_ICON_GENERATION: 'true'
+          NEXT_PUBLIC_BACKEND_URL: ${{ vars.NEXT_PUBLIC_BACKEND_URL }}
+          ENTITLEMENT_PUBLIC_KEY: ${{ vars.ENTITLEMENT_PUBLIC_KEY }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ vars.GOOGLE_DESKTOP_CLIENT_SECRET }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
@@ -78,56 +111,46 @@ jobs:
           TARGET_PLATFORM: ${{ matrix.target_platform }}
           SKIP_ICON_GENERATION: 'true'
 
-      # Write .env AFTER next build so it is never overwritten by the prebuild lifecycle
-      - name: Write .env file
-        shell: bash
-        run: |
-          if [[ -z "${{ secrets.GOOGLE_CLIENT_ID }}" || -z "${{ secrets.GOOGLE_CLIENT_SECRET }}" ]]; then
-            echo "::error::GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET repo secrets are not set — the built app would ship without Google Sync credentials. Add them in GitHub → Settings → Secrets and variables → Actions."
-            exit 1
-          fi
-          printf '%s\n' \
-            "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" \
-            "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-            "RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}" \
-            "RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}" \
-            "NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
-            "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
-            "NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
-            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
-            "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
-            "NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
-            "NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY || 'phc_tPmchKhdBVkfBDgRSP7BuMr9A5m8ZDMrcQiSKzzWMeki' }}" \
-            "NEXT_PUBLIC_POSTHOG_HOST=${{ secrets.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com' }}" \
-            "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" \
-            "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" \
-            > .env
-          echo ".env written successfully."
-
-      - name: Disable Windows Defender real-time monitoring (fixes EBUSY locks)
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
+      - name: Test native audio runtimes
+        run: node scripts/smoke-native.js
 
       - name: Build Electron installers
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          REQUIRE_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
         run: |
-          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          export CSC_IDENTITY_AUTO_DISCOVERY=false
-          [[ -n "${{ secrets.CSC_LINK }}" ]] && export CSC_LINK="${{ secrets.CSC_LINK }}"
-          [[ -n "${{ secrets.CSC_KEY_PASSWORD }}" ]] && export CSC_KEY_PASSWORD="${{ secrets.CSC_KEY_PASSWORD }}"
-          [[ -n "${{ secrets.APPLE_ID }}" ]] && export APPLE_ID="${{ secrets.APPLE_ID }}"
-          [[ -n "${{ secrets.APPLE_ID_PASSWORD }}" ]] && export APPLE_ID_PASSWORD="${{ secrets.APPLE_ID_PASSWORD }}"
-          [[ -n "${{ secrets.APPLE_TEAM_ID }}" ]] && export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
-          [[ -n "${{ secrets.WIN_CSC_LINK }}" ]] && export WIN_CSC_LINK="${{ secrets.WIN_CSC_LINK }}"
-          [[ -n "${{ secrets.WIN_CSC_KEY_PASSWORD }}" ]] && export WIN_CSC_KEY_PASSWORD="${{ secrets.WIN_CSC_KEY_PASSWORD }}"
+          signing=()
+          if [[ "$REQUIRE_SIGNING" == true && "${{ matrix.platform }}" != linux ]]; then
+            signing+=(--config.forceCodeSigning=true)
+          fi
+          npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish=never "${signing[@]}"
 
-          npx electron-builder --${{ matrix.platform }} --publish=never
+      - name: Upload candidate installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediscribe-${{ matrix.target_platform }}-${{ matrix.arch }}
+          path: |
+            dist-electron/*.exe
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.AppImage
+            dist-electron/*.deb
+            dist-electron/latest*.yml
+            dist-electron/*.blockmap
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && vars.RELEASE_APPROVED == 'true' && vars.NATIVE_SMOKE_TESTED_SHA == github.sha
         uses: softprops/action-gh-release@v2
         with:
           files: |
