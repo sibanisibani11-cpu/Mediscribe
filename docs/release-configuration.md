@@ -1,6 +1,6 @@
 # Release configuration and remaining operational checks
 
-The September 23 continuation completes the interrupted source integrations. It does not deploy the backend, migrate real payments, rotate credentials, or approve a release.
+The source repairs are on `codex/release-readiness`. The backend and scheduled payment recovery are deployed. Release approval is still blocked by desktop OAuth, platform signing, provider end-to-end tests, legacy ownership review, and installed-app validation. See [the current release status](release-status-2026-10-09.md) for verified results; the older audit documents describe historical states.
 
 ## Backend
 
@@ -14,9 +14,11 @@ Run Microsoft Store acquisition sync again to populate the unified `app_stats/mi
 
 ## Native assets and packaging
 
-`NATIVE_ASSET_MANIFEST` points to a JSON object keyed by `asset/target`; each entry contains a reviewed HTTPS `url` and 64-character `sha256`. CI writes it from the repository variable `NATIVE_ASSET_PINS`. No hashes were invented or fetched from unverified local files.
+`NATIVE_ASSET_MANIFEST` points to a JSON object keyed by `asset/target`; each entry contains a reviewed HTTPS `url` and 64-character `sha256`. The default is `docs/native-asset-pins.json`; packaging CI can override it with the repository variable `NATIVE_ASSET_PINS`. Pins came from upstream release metadata, model Git LFS records, or verified upstream downloads.
 
-Required keys are `ffmpeg/<target>`, `ollama/<target>`, `whisper/win32-x64` for Windows, `whisper_source/all` for macOS/Linux source builds, `vcredist/win32-x64` for Windows, and `ggml-base.en/all`, `ggml-tiny/all` for models. Supported targets are `win32-x64`, `darwin-x64`, `darwin-arm64`, and `linux-x64`. Windows ARM64 publishing is disabled until a complete compatible asset set is implemented and tested. Set `TARGET_PLATFORM` and `TARGET_ARCH` for the target being built. Whisper source compilation requires CMake and a working C/C++ toolchain. Cross-platform local builds require bundling each target independently before packaging it.
+Required keys are `ffmpeg_source/all`, `ollama/<target>`, `whisper/win32-x64` for Windows, `whisper_source/all` for macOS/Linux source builds, `vcredist/win32-x64` for Windows, and `ggml-base.en/all`, `ggml-tiny/all` for models. Supported targets are `win32-x64`, `darwin-x64`, `darwin-arm64`, and `linux-x64`. Windows ARM64 publishing is disabled until a complete compatible asset set is implemented and tested. Set `TARGET_PLATFORM` and `TARGET_ARCH` for the target being built. Whisper source compilation requires CMake and a working C/C++ toolchain. FFmpeg is built from pinned source without GPL/nonfree configuration, with its source, license, and build recipe bundled. Windows needs MSYS2 with make and MinGW GCC. Native builds run on each target OS.
+
+The validation workflow runs source checks, production dependency audits, native audio conversion and real Whisper inference on all four desktop targets, and an Android debug build with lint. It does not require release signing credentials or publish installers. Native smoke-test diagnostics contain only synthetic audio or the pinned upstream speech fixture. LLM generation, microphone capture, and installed-app behavior need separate verification.
 
 The `afterPack` hook checks the actual app archive for forbidden files/configuration, then validates native hashes, executable architectures, runtime-library hashes and model hashes. It runs native executable help/version commands when the host matches the target. These commands do not establish working microphone capture, model inference, keyboard IPC, installer behavior, or provider integration.
 

@@ -1,5 +1,7 @@
 # Payment repair status — October 6, 2026
 
+**Latest continuation:** Merchant-key rotation and scheduled recovery are now deployed and verified. See [October 9 release status](release-status-2026-10-09.md) for current results and remaining release blockers. The dated sections below preserve the earlier audit/deployment history.
+
 The payment backend, restrictive Firestore rules, and payment indexes have now been deployed to `studio-1170771809-75956`. Client UI/native changes remain local and have not been packaged or published. The working tree has not been committed. The earlier audit describes the pre-repair state.
 
 ## Implemented

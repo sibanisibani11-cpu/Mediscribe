@@ -2677,7 +2677,7 @@ let whisperServerProcess = null;
 
 function nativeBinaryPath(name) {
     return path.join(isDev ? path.join(__dirname, '../resources/bin') : path.join(process.resourcesPath, 'bin'),
-        `${process.platform}-${process.arch}`, name + (process.platform === 'win32' ? '.exe' : ''));
+        `${process.platform}-${process.arch}`, name === 'ollama' ? 'ollama-runtime' : '.', name + (process.platform === 'win32' ? '.exe' : ''));
 }
 function getWhisperServerPath() {
     const file = nativeBinaryPath('whisper-server');

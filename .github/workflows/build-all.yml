@@ -64,6 +64,7 @@ jobs:
 
       - name: Install Windows native build toolchain
         if: runner.os == 'Windows'
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -88,6 +89,7 @@ jobs:
           fi
           npm run build
         env:
+          MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
           SKIP_ICON_GENERATION: 'true'
           NEXT_PUBLIC_BACKEND_URL: ${{ vars.NEXT_PUBLIC_BACKEND_URL }}
           ENTITLEMENT_PUBLIC_KEY: ${{ vars.ENTITLEMENT_PUBLIC_KEY }}
@@ -109,6 +111,7 @@ jobs:
         run: npm run prebuild
         env:
           TARGET_PLATFORM: ${{ matrix.target_platform }}
+          MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
           SKIP_ICON_GENERATION: 'true'
 
       - name: Test native audio runtimes

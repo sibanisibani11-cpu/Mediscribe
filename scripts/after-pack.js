@@ -19,7 +19,7 @@ module.exports = async context => {
       const file=path.resolve(bin,relative);
       if (!file.startsWith(bin+path.sep) || await digest(file)!==hash) throw Error('Invalid packaged native asset: '+relative);
     }
-    const binary=path.join(bin,(name==='whisper'?'whisper-server':name)+(platform==='win32'?'.exe':''));
+    const binary=path.join(bin,name==='ollama'?'ollama-runtime':'.',(name==='whisper'?'whisper-server':name)+(platform==='win32'?'.exe':''));
     assertArchitecture(binary,{platform,arch,id});
     if (platform === process.platform && arch === process.arch) execFileSync(binary,[name==='ffmpeg'?'-version':'--help'],{timeout:30000,stdio:'pipe'});
   }

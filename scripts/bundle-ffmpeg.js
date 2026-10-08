@@ -7,11 +7,11 @@ run(async () => {
   const t = target(); if (!t) return;
   if (process.platform !== t.platform) throw Error('FFmpeg source builds require the target OS');
   const pin = asset('ffmpeg_source', 'all');
-  pin.layoutVersion = 2;
+  pin.layoutVersion = 3;
   await bundleArchive('ffmpeg', t, pin, 'tar.xz', async dir => {
     const source = path.join(dir, fs.readdirSync(dir).find(name => name.startsWith('ffmpeg-')));
     const args = ['configure', '--disable-autodetect', '--disable-everything', '--disable-doc', '--disable-debug',
-      '--disable-network', '--disable-ffplay', '--disable-ffprobe', '--disable-shared', '--enable-static',
+      '--disable-network', '--disable-ffplay', '--disable-ffprobe', '--disable-shared', '--enable-static', '--disable-iconv',
       '--disable-x86asm', '--enable-small', '--enable-ffmpeg', '--enable-protocol=file,pipe',
       '--enable-demuxer=matroska,mov,wav,mp3,ogg,flac,aac,aiff',
       '--enable-decoder=opus,vorbis,mp3,mp3float,aac,flac,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le,pcm_s16be,pcm_s24be,pcm_s32be',
@@ -30,7 +30,7 @@ run(async () => {
       const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') || 'PATH';
       env[pathKey] = path.join(msys, 'mingw64/bin') + ';' + path.join(msys, 'usr/bin') + ';' + (env[pathKey] || '');
       env.MSYSTEM = 'MINGW64';
-      args.push('--target-os=mingw32', '--arch=x86_64', '--cc=gcc');
+      args.push('--target-os=mingw32', '--arch=x86_64', '--cc=gcc', '--extra-ldflags=-static');
     }
     execFileSync(shell, args, { cwd: source, env, stdio: 'inherit' });
     execFileSync(make, ['-j', '4', 'ffmpeg' + (t.platform === 'win32' ? '.exe' : '')], { cwd: source, env, stdio: 'inherit' });

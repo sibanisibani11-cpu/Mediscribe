@@ -29,7 +29,7 @@ async function main() {
       assert.ok(manifest.assets[name]);
       for(const [file,hash] of Object.entries(manifest.assets[name].files))assert.equal(await digest(path.join(t.dir,file)),hash);
     }
-    const bin=name=>path.join(t.dir,name+(t.platform==='win32'?'.exe':''));
+    const bin=name=>path.join(t.dir,name==='ollama'?'ollama-runtime':'.',name+(t.platform==='win32'?'.exe':''));
     for(const name of ['ffmpeg','whisper-server','ollama'])assertArchitecture(bin(name),t);
     const build=execFileSync(bin('ffmpeg'),['-version'],{encoding:'utf8'});
     assert.ok(!/--enable-(nonfree|gpl)/.test(build),'Do not redistribute the old nonfree FFmpeg build');
@@ -54,7 +54,7 @@ async function main() {
     console.log('PASS: base.en performs real speech inference on the upstream sample');
     const ollamaPort=await freePort();const ollama=launch('ollama',['serve'],{OLLAMA_HOST:`127.0.0.1:${ollamaPort}`,OLLAMA_MODELS:path.join(dir,'models'),OLLAMA_NO_CLOUD:'1'});
     await waitReady(`http://127.0.0.1:${ollamaPort}/api/tags`,ollama);
-    assert.ok(fs.existsSync(path.join(t.dir,t.platform==='darwin'?'llama-server':'lib')),'Ollama inference runtime missing');
+    assert.ok(fs.existsSync(path.join(t.dir,'ollama-runtime',t.platform==='darwin'?'llama-server':'lib')),'Ollama inference runtime missing');
     console.log('PASS: isolated Ollama server responds and inference runtime is packaged');
     console.log('Native smoke tests passed for '+t.id+'. These do not attest microphone permissions, signed installers, Google sign-in, or LLM generation.');
   } catch (error) {

@@ -59,6 +59,7 @@ jobs:
           cache: npm
       - name: Install Windows source-build toolchain
         if: runner.os == 'Windows'
+        id: msys2
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -66,6 +67,8 @@ jobs:
       - run: npm ci
       - name: Build pinned native runtimes and models
         run: npm run prebuild
+        env:
+          MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
       - name: Verify real conversion and transcription
         run: node scripts/smoke-native.js
       - name: Upload integrity manifests
