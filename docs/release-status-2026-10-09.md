@@ -19,17 +19,33 @@ Firebase confirmed successful deployment but exited 1 afterward because Artifact
 
 ## Source and native validation
 
-- Local `npm run verify`: TypeScript, lint, 111 tests and client security checks passed.
-- Local static Next.js build passed.
-- Initial GitHub source checks and production dependency audits passed.
-- Initial Apple Silicon CI native test passed actual WAV/WebM/M4A conversion, Whisper base.en inference, and isolated Ollama startup.
-- The follow-up CI run passed source checks, production dependency audits, Android debug APK compilation and lint, and native smoke tests on Linux and Apple Silicon. The debug APK is downloaded locally to `dist-electron/android-debug/app-debug.apk` (not a signed release candidate).
-- Windows progressed to FFmpeg configuration but failed because the bundler assumed `C:\\msys64` instead of the path provided by the MSYS2 action. All Windows build workflows now pass the action's actual installation path. The standalone FFmpeg build also disables unused iconv and statically links MinGW runtime dependencies.
-- Intel diagnostics identified Whisper loading incompatible Ollama GGML libraries from the shared executable directory. Ollama now has an isolated `ollama-runtime` directory. Application paths, package checks, and native smoke tests use that layout; rebundling removes the old manifest-listed Ollama files while preserving other assets. The next CI run must pass before claiming Windows/Intel readiness.
-- Native asset downloads remain hash-checked after retries. The library-copy regression has tests for dereferencing, archive confinement, cycles and executable permissions.
-- Icon build dependencies are now explicit and locked; icon generation no longer installs arbitrary versions during the build.
+**All six CI jobs passed at source revision `6128b73fafe9c04b2c372a0c3f3d7baf06842c14`.** [Successful validation run](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37827788503).
 
-Validation runs: [initial run](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37823597705), [follow-up run](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37824672242).
+| Check | Verified result |
+| --- | --- |
+| Source | TypeScript, ESLint (warnings remain), 111 tests and client security checks passed |
+| Dependencies | App/backend production dependency audits passed |
+| Windows x64 | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
+| macOS Intel | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
+| macOS Apple Silicon | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
+| Linux x64 | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
+| Android | Web asset build, Capacitor sync, debug APK compilation and Android lint passed |
+| Local web build | Static Next.js build passed |
+| Local LLM inference | Bundled Apple Silicon Ollama generated text with the existing `llama3.2:3b` model and a synthetic prompt |
+
+The latest debug APK is at `dist-electron/android-debug-6128b73/app-debug.apk`. Its ZIP integrity check passed. SHA-256: `7246c092a162b4565b7165b7077bdb222c784de43c7b049380df186408e28707`. It is a debug test artifact, not the signed release APK/AAB. The earlier debug APK remains separately in `dist-electron/android-debug`.
+
+The CI failures led to these repairs:
+
+- Android explicitly installs `platform-tools`, avoiding the removed SDK `tools` package.
+- Ollama runtime copying materializes library links and rejects archive escapes/cycles, avoiding Node 22's recursive-copy regression. Native downloads retry interrupted connections and still require the pinned SHA-256.
+- Windows workflows use the MSYS2 action's actual installation path. FFmpeg disables unused iconv and statically links MinGW runtime dependencies.
+- Ollama's executable and libraries live under `ollama-runtime`. This stops Whisper from loading Ollama's incompatible GGML libraries, the cause of the Intel crash. Application paths, package checks and smoke tests use the isolated layout. Rebundling removes old manifest-listed Ollama files while preserving other assets.
+- Icon generation uses explicitly locked dependencies; it no longer installs arbitrary package versions during builds.
+
+The local LLM test used no customer content and downloaded no model. The native tests use synthetic tones and the checksum-pinned upstream speech fixture. Native tests do not verify signed installer behavior, live microphone use, or LLM generation on Windows/Linux/Intel Mac.
+
+Earlier diagnostic runs: [initial](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37823597705), [follow-up](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37824672242).
 
 ## Inputs and checks still required
 
