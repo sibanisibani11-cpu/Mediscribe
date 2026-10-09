@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   build-windows:
     name: Build AppX (${{ matrix.arch }})
@@ -60,10 +63,11 @@ jobs:
           fi
           npm run build
         env:
+          MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
           NEXT_PUBLIC_BACKEND_URL: ${{ vars.NEXT_PUBLIC_BACKEND_URL }}
           ENTITLEMENT_PUBLIC_KEY: ${{ vars.ENTITLEMENT_PUBLIC_KEY }}
-          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
-          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ vars.GOOGLE_DESKTOP_CLIENT_SECRET }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ secrets.GOOGLE_DESKTOP_CLIENT_ID || vars.GOOGLE_DESKTOP_CLIENT_ID }}
+          GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET || vars.GOOGLE_DESKTOP_CLIENT_SECRET }}
           NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
           NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
           NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
@@ -86,16 +90,21 @@ jobs:
       - name: Package Electron app (AppX)
         run: npx electron-builder --win appx --${{ matrix.arch }} --publish=never
 
+      - name: Verify Store identity and update version
+        shell: pwsh
+        run: ./scripts/check-store-appx.ps1
+
       - name: Upload AppX artifact
         uses: actions/upload-artifact@v4
         with:
           name: MediScribe-AppX-${{ matrix.arch }}
           path: dist-electron/*.appx
           compression-level: 6
-          retention-days: 1
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Publish to Microsoft Store
-        if: env.HAS_STORE_CREDS == 'true' && vars.RELEASE_APPROVED == 'true' && vars.NATIVE_SMOKE_TESTED_SHA == github.sha
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.HAS_STORE_CREDS == 'true' && vars.RELEASE_APPROVED == 'true' && vars.NATIVE_SMOKE_TESTED_SHA == github.sha
         shell: bash
         env:
           PC_TENANT_ID: ${{ secrets.PC_TENANT_ID }}

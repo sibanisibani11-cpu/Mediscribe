@@ -1,6 +1,6 @@
 # Release configuration and remaining operational checks
 
-The source repairs are on `codex/release-readiness`. The backend and scheduled payment recovery are deployed. Release approval is still blocked by desktop OAuth, platform signing, provider end-to-end tests, legacy ownership review, and installed-app validation. See [the current release status](release-status-2026-10-09.md) for verified results; the older audit documents describe historical states.
+The source repairs are on `codex/release-readiness`. The backend and scheduled payment recovery are deployed. Desktop OAuth is configured locally; GitHub build configuration remains pending. Release approval is still blocked by platform signing, provider end-to-end tests, legacy ownership review, and installed-app validation. See [the current release status](release-status-2026-10-09.md) for verified results; the older audit documents describe historical states.
 
 ## Backend
 
