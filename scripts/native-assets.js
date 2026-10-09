@@ -111,7 +111,14 @@ function extract(archive, dir) {
     execFileSync('powershell', ['-NoProfile', '-Command', `Expand-Archive -Force -LiteralPath ${quote(archive)} -DestinationPath ${quote(dir)}`], { stdio: 'inherit' });
   } else if (archive.endsWith('.zip') && process.platform === 'linux') {
     execFileSync('unzip', ['-q', archive, '-d', dir], { stdio: 'inherit' });
-  } else execFileSync('tar', ['-xf', archive, '-C', dir], { stdio: 'inherit' });
+  } else {
+    // Git Bash/MSYS tar treats a Windows drive prefix as a remote host.
+    // Use Windows' bundled bsdtar regardless of the invoking shell's PATH.
+    const tar = process.platform === 'win32'
+      ? path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+      : 'tar';
+    execFileSync(tar, ['-xf', archive, '-C', dir], { stdio: 'inherit' });
+  }
 }
 async function recordAsset(t, name, source, relativeFiles) {
   const manifestPath = path.join(t.dir, 'native-manifest.json');
