@@ -214,7 +214,9 @@
         }
       ],
       "icon": "build/icon.ico",
-      "publisherName": "MediScribe",
+      "signtoolOptions": {
+        "publisherName": "MediScribe"
+      },
       "verifyUpdateCodeSignature": true,
       "requestedExecutionLevel": "asInvoker",
       "extraResources": [
