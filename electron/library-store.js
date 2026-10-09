@@ -14,7 +14,8 @@ function atomicWrite(file, data, io = fs) {
     const temporary = path.join(path.dirname(file), '.' + path.basename(file) + '.' + randomUUID() + '.tmp');
     try {
         io.writeFileSync(temporary, data, { flag: 'wx', mode: 0o600 });
-        const descriptor = io.openSync(temporary, 'r');
+        // Windows requires write access for FlushFileBuffers (fsync).
+        const descriptor = io.openSync(temporary, 'r+');
         try { io.fsyncSync(descriptor); } finally { io.closeSync(descriptor); }
         io.renameSync(temporary, file);
     } finally {

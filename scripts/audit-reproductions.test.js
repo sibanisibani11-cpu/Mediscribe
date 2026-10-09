@@ -38,7 +38,7 @@ test('deleting active base model selects an installed alternative', async () => 
   const files = new Set(['base.en', 'tiny']);
   const { fn, context } = handler('delete-model', {
     fs: { existsSync: name => files.has(name), unlinkSync: name => files.delete(name) },
-    getModelPath: name => name, path: { ...path, resolve: (...args) => args.length === 1 ? '/test/models/' + args[0] : '/test/models' }, app: { getPath: () => '/test' }, saveModelSelection() {}, currentModel: 'base.en', SUPPORTED_MODELS: [{ name: 'base.en' }, { name: 'tiny' }],
+    getModelPath: name => name, path: { ...path.posix, resolve: (...args) => args.length === 1 ? '/test/models/' + args[0] : '/test/models' }, app: { getPath: () => '/test' }, saveModelSelection() {}, currentModel: 'base.en', SUPPORTED_MODELS: [{ name: 'base.en' }, { name: 'tiny' }],
     whisperServerProcess: null, stopHealthCheck() {}, setWhisperServerStatus() {},
     whisperServerRestartCount: 0, setTimeout() {},
   });

@@ -82,7 +82,7 @@ test('runtime copy materializes shared-library links and preserves executable pe
  assert.deepEqual(filesUnder(dest).sort(),['library.so','library.so.1']);
  assert.equal(fs.lstatSync(path.join(dest,'library.so')).isSymbolicLink(),false);
  assert.equal(fs.readFileSync(path.join(dest,'library.so'),'utf8'),'runtime');
- assert.ok(fs.statSync(path.join(dest,'library.so')).mode & 0o100);
+ if (process.platform !== 'win32') assert.ok(fs.statSync(path.join(dest,'library.so')).mode & 0o100);
 });
 test('runtime copy rejects links outside the archive and directory cycles',t=>{
  const root=temporary(t),src=path.join(root,'source');fs.mkdirSync(src);fs.writeFileSync(path.join(root,'private'),'private');
@@ -98,4 +98,25 @@ test('native download retries an interrupted transfer and only installs verified
   assert.equal(fs.readFileSync(file,'utf8'),'previous');return new Response('complete');
  });
  assert.equal(attempts,2);assert.equal(fs.readFileSync(file,'utf8'),'complete');assert.deepEqual(fs.readdirSync(root),['binary']);
+});
+
+test('atomic library writes flush a writable handle before replacing the original', t => {
+ const root=temporary(t),file=path.join(root,'library.json');fs.writeFileSync(file,'["original"]');
+ const writable=new Set();let flushed=false;
+ const io={...fs,
+  openSync(name,flags){const fd=fs.openSync(name,flags);if(flags.includes('+')||flags.includes('w'))writable.add(fd);return fd;},
+  fsyncSync(fd){assert.ok(writable.has(fd),'Windows flush requires a writable handle');fs.fsyncSync(fd);flushed=true;},
+  renameSync(from,to){assert.ok(flushed);fs.renameSync(from,to);}
+ };
+ L.writeJson(file,['replacement'],io);
+ assert.deepEqual(JSON.parse(fs.readFileSync(file,'utf8')),['replacement']);
+ assert.deepEqual(fs.readdirSync(root),['library.json']);
+});
+
+test('failed flush preserves the original library and cleans the temporary file', t => {
+ const root=temporary(t),file=path.join(root,'library.json');fs.writeFileSync(file,'["original"]');
+ const io={...fs,fsyncSync(){throw Error('flush failed');}};
+ assert.throws(()=>L.writeJson(file,['replacement'],io),/flush failed/);
+ assert.equal(fs.readFileSync(file,'utf8'),'["original"]');
+ assert.deepEqual(fs.readdirSync(root),['library.json']);
 });
