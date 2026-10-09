@@ -26,6 +26,8 @@ Publishing requires `RELEASE_APPROVED=true` and `NATIVE_SMOKE_TESTED_SHA` equal 
 
 ## Android
 
+Use `npm run release:check -- --android` to check Android inputs independently of desktop OAuth/signing. `npm run build:android` runs that preflight, builds the web assets with native desktop downloads disabled, syncs Capacitor, and builds the signed AAB/APK. For debug development, `npm run cap:sync` only builds and syncs the web assets; then run `assembleDebug` from the Android Gradle project. Java 21 and the Android SDK are required for Gradle builds. Local signing inputs can be saved in the ignored `.env`; keep the keystore outside version control.
+
 Provide `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` as CI secrets. Set repository variables `ANDROID_VERSION_NAME`, `ANDROID_VERSION_CODE`, and `ANDROID_PREVIOUS_VERSION_CODE` from the verified published version. Gradle rejects release builds without signing inputs or a strictly increasing code; CI verifies the APK/AAB signatures and removes the temporary keystore. Verify the upload certificate matches Play Console and test the installed app on a device. No Android build was run locally.
 
 ## Local data recovery

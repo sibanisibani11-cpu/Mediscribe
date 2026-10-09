@@ -9,7 +9,16 @@ function check(name, fn) { try { if (!fn()) throw Error(); console.log('OK: ' + 
 check('production backend URL', () => new URL(process.env.NEXT_PUBLIC_BACKEND_URL).protocol === 'https:');
 check('Ed25519 entitlement public key', () => crypto.createPublicKey((process.env.ENTITLEMENT_PUBLIC_KEY || '').replace(/\\n/g, '\n')).asymmetricKeyType === 'ed25519');
 for (const key of ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN']) check(key, () => !!process.env[key]);
-const t = target();
+const android = process.argv.includes('--android');
+const t = android ? null : target();
+if (android) {
+  check('Android upload keystore file', () => fs.statSync(process.env.ANDROID_KEYSTORE_PATH).isFile());
+  for (const key of ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'ANDROID_VERSION_NAME']) check(key, () => !!process.env[key]?.trim());
+  check('Android version code above the verified published code', () => {
+    const code = process.env.ANDROID_VERSION_CODE || '', previous = process.env.ANDROID_PREVIOUS_VERSION_CODE || '';
+    return /^\d+$/.test(code) && /^\d+$/.test(previous) && Number(code) > Number(previous) && Number(code) <= 2100000000;
+  });
+}
 if (t) {
   check('desktop Google OAuth configuration', () => {
     if (process.env.GOOGLE_DESKTOP_CLIENT_FILE) {

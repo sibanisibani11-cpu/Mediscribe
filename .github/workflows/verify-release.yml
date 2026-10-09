@@ -102,8 +102,8 @@ jobs:
         run: |
           npm ci
           npm ci --prefix server
-      - name: Build web assets for Android
-        run: npm run build
+      - name: Build and sync web assets for Android
+        run: npm run cap:sync
         env:
           TARGET_PLATFORM: none
           NEXT_PUBLIC_BACKEND_URL: ${{ vars.NEXT_PUBLIC_BACKEND_URL }}
@@ -114,7 +114,6 @@ jobs:
           NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
-      - run: npx cap sync android
       - name: Build debug APK and run Android lint
         working-directory: android
         run: |
