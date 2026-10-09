@@ -19,11 +19,11 @@ Firebase confirmed successful deployment but exited 1 afterward because Artifact
 
 ## Source and native validation
 
-**All six CI jobs passed at source revision `6128b73fafe9c04b2c372a0c3f3d7baf06842c14`.** [Successful validation run](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37827788503).
+**All six CI jobs passed at source revision `7d20c1c7c3aa57891d638d6dd9883f5365eb7148`.** [Successful validation run](https://github.com/sibanisibani11-cpu/Mediscribe/actions/runs/37911184868).
 
 | Check | Verified result |
 | --- | --- |
-| Source | TypeScript, ESLint (warnings remain), 111 tests and client security checks passed |
+| Source | TypeScript, ESLint (warnings remain), 115 tests and client security checks passed |
 | Dependencies | App/backend production dependency audits passed |
 | Windows x64 | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
 | macOS Intel | Native build, WAV/WebM/M4A conversion, real Whisper base.en transcription and isolated Ollama startup passed |
@@ -33,7 +33,9 @@ Firebase confirmed successful deployment but exited 1 afterward because Artifact
 | Local web build | Static Next.js build passed |
 | Local LLM inference | Bundled Apple Silicon Ollama generated text with the existing `llama3.2:3b` model and a synthetic prompt |
 
-The latest debug APK is at `dist-electron/android-debug-6128b73/app-debug.apk`. Its ZIP integrity check passed. SHA-256: `7246c092a162b4565b7165b7077bdb222c784de43c7b049380df186408e28707`. It is a debug test artifact, not the signed release APK/AAB. The earlier debug APK remains separately in `dist-electron/android-debug`.
+The latest debug APK is at `dist-electron/android-debug-7d20c1c/app-debug.apk`. Its ZIP integrity check passed. SHA-256: `016827ca0791cf0473e0313ce56a7c9d8af15a8ec21ddb35ecac3daf4c319372`. It is a debug test artifact, not the signed release APK/AAB. Earlier debug APKs remain in their separate artifact directories.
+
+The local Android entry points now explicitly skip desktop native downloads and desktop OAuth requirements, matching Android CI. `npm run cap:sync` builds and syncs Android web assets; `npm run build:android` first checks Android release signing/version inputs and then builds with the host's Gradle wrapper. Keystore paths are resolved before changing working directories. Four additional regression tests cover platform routing, fail-fast behavior, signing inputs and version codes; all 115 local tests, type checks, lint and client security checks passed. The Android CI job built the debug APK and passed lint using the corrected entry point. `npm run release:check -- --android` currently reports the missing upload keystore, passwords/alias, version name and verified increasing version code.
 
 The CI failures led to these repairs:
 
