@@ -18,6 +18,7 @@ Local TypeScript, ESLint (existing warnings), all 119 tests and client security 
 - Build/source: run `37979122199`, commit `63e6090`.
 - AppX SHA-256 from the Windows validation: `51bfa85828c9a5b8a0c5d0b84c2bed114f5126b83050a681fe6c7647e2c1fb89`.
 - GitHub artifact: `MediScribe-AppX-x64` (workflow retention: seven days).
+- Download verified locally on October 11: `dist-electron/windows-store-63e6090/MediScribe 1.2.1.appx` (1,897,769,916 bytes). The artifact ZIP SHA-256 matched the Actions upload digest; the extracted AppX matched the Windows checksum, passed ZIP CRC integrity checks, and its manifest matched the recorded Store name, publisher, version and architecture. `SHA256SUMS.txt` is saved beside the package.
 
 ## Remaining acceptance
 
