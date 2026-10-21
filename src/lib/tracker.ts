@@ -17,7 +17,8 @@ export async function trackAppLaunch(_info: UserTrackingInfo): Promise<void> {
           if (!sessionId) { sessionId = crypto.randomUUID(); sessionStorage.setItem('mediscribe_launch_session_id', sessionId); }
           const ua = navigator.userAgent;
           const os = /Android/i.test(ua) ? 'android' : /iPhone|iPad/i.test(ua) ? 'ios' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) ? 'mac' : /Linux/i.test(ua) ? 'linux' : 'unknown';
-          await backendRequest('/v1/telemetry', { installId: await getInstallationId(), sessionId, os, source: (window as any).Capacitor ? 'android' : 'website' }, false);
+          const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+          await backendRequest('/v1/telemetry', { installId: await getInstallationId(), sessionId, os, source: (window as any).Capacitor ? 'android' : 'website', timezone }, false);
         }
         recorded = true; return;
       } catch { if (attempt < 2) await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1500)); }

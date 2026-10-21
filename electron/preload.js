@@ -131,9 +131,12 @@ contextBridge.exposeInMainWorld('electron', {
   // Keyword Listener (automatic expansion in Word)
   startKeywordListener: () => ipcRenderer.invoke('start-keyword-listener'),
   stopKeywordListener: () => ipcRenderer.invoke('stop-keyword-listener'),
+  // Accessibility & Microphone permissions
   checkAccessibilityPermission: () => ipcRenderer.invoke('check-accessibility-permission'),
   requestAccessibilityPermission: () => ipcRenderer.invoke('request-accessibility-permission'),
   openAccessibilitySettings: () => ipcRenderer.invoke('open-accessibility-settings'),
+  checkMicrophonePermission: () => ipcRenderer.invoke('check-microphone-permission'),
+  openMicrophonePreferences: () => ipcRenderer.invoke('open-microphone-preferences'),
 
   // Template Library
   getTemplates: () => ipcRenderer.invoke('get-templates'),

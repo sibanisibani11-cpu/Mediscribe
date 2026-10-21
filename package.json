@@ -1,6 +1,6 @@
 {
   "name": "mediscribe-app",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "private": true,
   "main": "electron/main.js",
   "description": "AI-Powered Medical Transcription for Healthcare Professionals",
@@ -43,7 +43,6 @@
     "release:check": "node scripts/check-release-readiness.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
     "dictionary-en": "^4.0.0",
     "dotenv": "^16.5.0",
     "electron-updater": "^6.8.3",
@@ -97,9 +96,7 @@
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5",
-    "wait-on": "^8.0.1",
-    "whisper-node": "^1.1.1",
-    "zod": "^3.24.2"
+    "wait-on": "^8.0.1"
   },
   "build": {
     "appId": "com.mediapp.mediscribe",
@@ -153,6 +150,9 @@
       }
     ],
     "mac": {
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "MediScribe requires microphone access to record and transcribe medical dictations."
+      },
       "extraResources": [
         {
           "from": "resources/models",

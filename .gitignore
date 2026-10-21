@@ -86,3 +86,4 @@ native-assets.json
 android-release.keystore
 rzp-key*.csv
 client_secret*.json
+/artifacts/

@@ -24,7 +24,8 @@ export async function getInstallationId(): Promise<string> {
 }
 export async function refreshEntitlement(paymentId?: string) {
   const deviceId = await getInstallationId();
-  const result = await backendRequest(paymentId ? '/v1/payments/reconcile' : '/v1/entitlement', { deviceId, ...(paymentId ? { paymentId } : {}) });
+  const timezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+  const result = await backendRequest(paymentId ? '/v1/payments/reconcile' : '/v1/entitlement', { deviceId, timezone, ...(paymentId ? { paymentId } : {}) });
   const value = JSON.parse(atob(result.entitlement.payload.replace(/-/g, '+').replace(/_/g, '/')));
   if (value.uid !== auth?.currentUser?.uid || value.deviceId !== deviceId) throw new Error('Account changed. Please retry.');
   if ((window.electron as any)?.saveSubscriptionCache) {
@@ -32,4 +33,12 @@ export async function refreshEntitlement(paymentId?: string) {
     if (!saved.success) throw new Error(saved.error || 'Could not save verified access');
   }
   return value;
+}
+
+export async function ensureDesktopAccess() {
+  if (await (window.electron as any)?.checkActivation?.()) return;
+  const access = await refreshEntitlement();
+  if (!access.isActivated || Date.parse(access.expiresAt) <= Date.now()) {
+    throw new Error('Your account does not currently have active access. Check your subscription or contact support.');
+  }
 }

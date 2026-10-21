@@ -41,6 +41,79 @@
         }
         .close-btn:hover { background: rgba(239,68,68,0.75); color: white; transform: scale(1.1); }
 
+        /* ── Minimise button (left of close) ── */
+        .min-btn {
+            position: absolute;
+            top: 4px;
+            right: 30px;
+            width: 20px;
+            height: 20px;
+            background: rgba(15, 23, 42, 0.55);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 100;
+            transition: all 0.2s ease;
+            border: 1px solid rgba(255,255,255,0.08);
+            pointer-events: auto;
+        }
+        .min-btn::before {
+            content: '';
+            width: 8px;
+            height: 2px;
+            border-radius: 1px;
+            background: rgba(255,255,255,0.6);
+            transition: background 0.2s ease;
+        }
+        .min-btn:hover { background: rgba(99,102,241,0.8); transform: scale(1.1); }
+        .min-btn:hover::before { background: white; }
+
+        /* ── Minimised dot (docked to screen edge) ── */
+        .mini-dot {
+            display: none;
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            pointer-events: auto;
+            border: 2px solid rgba(255,255,255,0.45);
+            box-shadow: 0 2px 8px rgba(15,23,42,0.35);
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+            animation: dot-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .mini-dot:hover { transform: scale(1.12); filter: brightness(1.15); }
+        .mini-dot.mode-dictation { background: linear-gradient(135deg, #6366f1, #d946ef); }
+        .mini-dot.mode-keyword   { background: linear-gradient(135deg, #0ea5e9, #6366f1); }
+        .mini-dot.mode-template  { background: linear-gradient(135deg, #7c3aed, #10b981); }
+        .mini-dot .rec-core {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: white; opacity: 0.9;
+        }
+        .body-recording .mini-dot { animation: dot-rec 1.6s infinite; }
+        .body-recording .mini-dot .rec-core { background: #f43f5e; }
+        @keyframes dot-in {
+            from { transform: scale(0.4); opacity: 0; }
+            to   { transform: scale(1);   opacity: 1; }
+        }
+        @keyframes dot-rec {
+            0%   { box-shadow: 0 0 0 0 rgba(244,63,94,0.7); }
+            70%  { box-shadow: 0 0 0 5px rgba(244,63,94,0); }
+            100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); }
+        }
+
+        body.minimized { width: 30px; height: 30px; }
+        body.minimized .close-btn,
+        body.minimized .min-btn,
+        body.minimized .triangle-wrap { display: none; }
+        body.minimized .mini-dot { display: flex; }
+
         /* ─────────────────────────────────────────
            TRIANGLE TOGGLE CONTAINER
            We use absolute positioning inside a fixed
@@ -228,7 +301,11 @@
 </head>
 
 <body id="app-body">
+    <div class="min-btn" id="min-btn" title="Minimise to screen edge"></div>
     <div class="close-btn" id="close-btn">×</div>
+    <div class="mini-dot mode-dictation" id="mini-dot" title="Click to expand · drag to move">
+        <div class="rec-core"></div>
+    </div>
 
     <div class="triangle-wrap" id="triangle-wrap">
         <!-- Drag-through area behind everything -->
@@ -280,6 +357,9 @@
         const centerIcon  = document.getElementById('center-icon');
         const ripple      = document.getElementById('click-ripple');
         const closeBtn    = document.getElementById('close-btn');
+        const minBtn      = document.getElementById('min-btn');
+        const miniDot     = document.getElementById('mini-dot');
+        let isMinimized   = false;
 
         const nodeDictation = document.getElementById('node-dictation');
         const nodeKeyword   = document.getElementById('node-keyword');
@@ -309,6 +389,8 @@
         function updateUI() {
             // ── Centre bubble ──
             centerBubble.className = `center-bubble mode-${currentMode}`;
+            miniDot.className = `mini-dot mode-${currentMode}`;
+            body.classList.toggle('minimized', isMinimized);
 
             if (isRecording) {
                 body.classList.add('body-recording');
@@ -400,6 +482,12 @@
             ipcRenderer.invoke('hide-floating-button');
         });
 
+        // ── Minimise to a dot at the screen edge ──
+        minBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            ipcRenderer.invoke('minimize-floating-button');
+        });
+
         // ── IPC listeners ──
         ipcRenderer.on('rec-state-change', (_e, state) => {
             isRecording = state;
@@ -409,16 +497,25 @@
             currentMode = mode;
             updateUI();
         });
+        ipcRenderer.on('bubble-minimized-change', (_e, minimized) => {
+            isMinimized = !!minimized;
+            lastIgnoreState = null; // window size changed; re-evaluate click-through
+            updateUI();
+        });
 
         updateUI();
         ipcRenderer.send('request-bubble-state');
 
         // ── Dragging (drag-zone + triangle-wrap, but not the interactive nodes) ──
-        let dragging = false, dragReady = false, startX = 0, startY = 0, winX = 0, winY = 0;
+        // The minimised dot shares this logic: a drag moves it, a plain click expands.
+        let dragging = false, dragReady = false, dragMoved = false, dragSource = null;
+        let startX = 0, startY = 0, winX = 0, winY = 0;
 
-        document.getElementById('drag-zone').addEventListener('mousedown', (e) => {
+        function startDrag(e, source) {
             dragging = true;
             dragReady = false;
+            dragMoved = false;
+            dragSource = source;
             startX = e.screenX; startY = e.screenY;
             ipcRenderer.invoke('get-floating-button-position').then(pos => {
                 if (!dragging) return;
@@ -428,10 +525,18 @@
                 dragging = false;
                 dragReady = false;
             });
+        }
+
+        document.getElementById('drag-zone').addEventListener('mousedown', (e) => startDrag(e, 'bubble'));
+        miniDot.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            startDrag(e, 'dot');
         });
 
         window.addEventListener('mousemove', (e) => {
-            if (!dragging || !dragReady) return;
+            if (!dragging) return;
+            if (Math.abs(e.screenX - startX) > 3 || Math.abs(e.screenY - startY) > 3) dragMoved = true;
+            if (!dragReady) return;
             ipcRenderer.invoke('set-floating-button-position',
                 winX + (e.screenX - startX),
                 winY + (e.screenY - startY));
@@ -439,9 +544,15 @@
 
         window.addEventListener('mouseup', () => {
             if (dragging) {
+                const wasDotClick = dragSource === 'dot' && !dragMoved;
                 dragging = false;
                 dragReady = false;
-                ipcRenderer.invoke('save-floating-button-position');
+                dragSource = null;
+                if (wasDotClick) {
+                    ipcRenderer.invoke('expand-floating-button');
+                } else {
+                    ipcRenderer.invoke('save-floating-button-position');
+                }
             }
         });
 
@@ -462,6 +573,8 @@
                 over.closest('#node-keyword')   ||
                 over.closest('#node-template')  ||
                 over.closest('#close-btn')       ||
+                over.closest('#min-btn')         ||
+                over.closest('#mini-dot')        ||
                 over.closest('#drag-zone')
             );
             setIgnoreMouseEvents(!clickable);

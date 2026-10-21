@@ -106,6 +106,8 @@ class GoogleDriveSync {
         if (!['merge', 'push', 'pull'].includes(strategy)) throw new Error('Invalid sync strategy');
         if (!(await this.initialize())) throw new Error('Google Drive is not connected');
         const before = fs.existsSync(localPath) ? fs.readFileSync(localPath, 'utf8') : null;
+        // An untouched library has no file. It is not an instruction to erase cloud data.
+        if (strategy === 'push' && before === null) return { skipped: true };
         let local = strategy === 'pull' ? null : library.documentFrom(name, before === null ? [] : JSON.parse(before));
         if (local && name.includes('templates')) local = this.mapRecords(local, data => this.packTemplates(localPath, data));
         const rawRemote = await this.getRemoteData(name);
@@ -116,7 +118,6 @@ class GoogleDriveSync {
             if (!remote) throw new Error('Cloud file is missing');
             next = remote;
         } else if (strategy === 'push') {
-            if (before === null) throw new Error('Local file is missing');
             // An explicit replacement supersedes all known branches, including deletions.
             next = library.updatedDocument(name, remote || [], library.values(local));
         } else next = remote ? library.mergeDocuments(name, local, remote) : local;

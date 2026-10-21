@@ -52,6 +52,12 @@ declare global {
             platform: string;
             isElectron: boolean;
             minimizeWindow: () => Promise<{ success: boolean }>;
+            restoreMainWindow?: () => Promise<void>;
+            checkAccessibilityPermission?: () => Promise<boolean>;
+            requestAccessibilityPermission?: () => Promise<boolean>;
+            openAccessibilitySettings?: () => Promise<boolean>;
+            checkMicrophonePermission?: () => Promise<'granted' | 'denied' | 'not-determined' | 'restricted' | 'unknown'>;
+            openMicrophonePreferences?: () => Promise<boolean>;
         };
     }
 }

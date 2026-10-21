@@ -21,7 +21,9 @@ function trustedSender(event, channel) {
             return url.protocol === 'file:' && require('url').fileURLToPath(url) === path.join(__dirname, '../out/index.html');
         } catch { return false; }
     }
-    return floatingButton && event.sender === floatingButton.webContents && ['request-bubble-state', 'stop-recording', 'trigger-toggle-recording', 'restore-main-window', 'set-ignore-mouse-events'].includes(channel);
+    return floatingButton && event.sender === floatingButton.webContents && ['request-bubble-state', 'stop-recording', 'trigger-toggle-recording', 'restore-main-window', 'set-ignore-mouse-events',
+        'set-typing-mode', 'hide-floating-button', 'get-floating-button-position', 'set-floating-button-position', 'save-floating-button-position',
+        'minimize-floating-button', 'expand-floating-button'].includes(channel);
 }
 ipcMain.handle = (channel, callback) => originalHandle(channel, (event, ...args) => {
     if (!trustedSender(event, channel)) throw new Error('Untrusted IPC sender');
@@ -60,7 +62,8 @@ function getTelemetryContext() {
         fs.writeFileSync(file, JSON.stringify({ id: installId }), { mode: 0o600 });
     }
     telemetryContext = { installId, sessionId: crypto.randomUUID(), os: getPlatformName(),
-        source: process.windowsStore ? 'microsoft_store' : process.mas ? 'mac_app_store' : 'direct', version: app.getVersion() };
+        source: process.windowsStore ? 'microsoft_store' : process.mas ? 'mac_app_store' : 'direct', version: app.getVersion(),
+        timezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined };
     return telemetryContext;
 }
 function readVerifiedEntitlement() {
@@ -77,22 +80,25 @@ function ownedTemplatePath(file) {
 }
 const { authenticateWithGoogle, getToken, getDriveClient, logoutGoogle } = require('./oauth-handler');
 
-// ── Auto-Updater Setup ─────────────────────────────────────────────────────
 let autoUpdater = null;
-try {
-    autoUpdater = require('electron-updater').autoUpdater;
-    autoUpdater.logger = require('electron').app ? null : console;
-    autoUpdater.autoDownload = true;       // Download silently in background
-    autoUpdater.autoInstallOnAppQuit = true; // Install when user quits normally
-} catch (err) {
-    console.warn('[Updater] electron-updater not available:', err.message);
+function getAutoUpdater() {
+    if (!autoUpdater) {
+        try {
+            autoUpdater = require('electron-updater').autoUpdater;
+            autoUpdater.logger = require('electron').app ? null : console;
+            autoUpdater.autoDownload = true;       // Download silently in background
+            autoUpdater.autoInstallOnAppQuit = true; // Install when user quits normally
+        } catch (err) {
+            console.warn('[Updater] electron-updater not available:', err.message);
+        }
+    }
+    return autoUpdater;
 }
 
 // Detect if running as a Windows Store (AppX/MSIX) package — auto-updates must go through the Store
 const isWindowsStore = process.platform === 'win32' && !!process.windowsStore;
 
 function setupAutoUpdater(win) {
-    if (!autoUpdater || !win) return;
     if (isDev) {
         console.log('[Updater] Skipping auto-update in dev mode.');
         return;
@@ -101,6 +107,8 @@ function setupAutoUpdater(win) {
         console.log('[Updater] Skipping auto-update in Windows Store build.');
         return;
     }
+    const updater = getAutoUpdater();
+    if (!updater || !win) return;
 
     autoUpdater.on('checking-for-update', () => {
         console.log('[Updater] Checking for updates...');
@@ -203,14 +211,17 @@ function checkForUpdatesViaGitHub(win) {
 }
 
 ipcMain.handle('check-for-updates', () => {
-    if (!autoUpdater || isDev) return { status: 'dev-mode' };
+    if (isDev) return { status: 'dev-mode' };
     if (isWindowsStore) return { status: 'store-mode' };
-    autoUpdater.checkForUpdates().catch(console.error);
+    const updater = getAutoUpdater();
+    if (!updater) return { status: 'dev-mode' };
+    updater.checkForUpdates().catch(console.error);
     return { status: 'checking' };
 });
 
 ipcMain.handle('install-update', () => {
-    if (autoUpdater) autoUpdater.quitAndInstall(false, true);
+    const updater = getAutoUpdater();
+    if (updater) updater.quitAndInstall(false, true);
 });
 
 ipcMain.handle('open-external', async (event, target) => { const url = new URL(target); if (!['https:', 'mailto:'].includes(url.protocol)) throw new Error('Unsupported URL'); await shell.openExternal(url.href); return { success: true }; });
@@ -239,14 +250,16 @@ ipcMain.handle('sync-cloud', async (event, strategy = 'merge') => {
         if (generation !== libraryGeneration) throw new Error('Account changed during sync.');
     });
     const completed = [];
+    const skipped = [];
     for (const [name, file, load] of [
         ['user-keywords.json', keywordLibraryPath, loadKeywordLibrary],
         ['user-dictionary.json', dictionaryPath, loadDictionary],
         ['user-templates.json', templateLibraryPath, loadTemplateLibrary],
     ]) {
         try {
-            await session.sync(name, file, strategy);
-            completed.push(name);
+            const result = await session.sync(name, file, strategy);
+            if (result?.skipped) skipped.push(name);
+            else completed.push(name);
         } catch (error) {
             throw new Error(`Sync stopped at ${name}. Completed: ${completed.join(', ') || 'none'}. ${error.message}`);
         } finally {
@@ -258,7 +271,7 @@ ipcMain.handle('sync-cloud', async (event, strategy = 'merge') => {
             }
         }
     }
-    return { success: true };
+    return { success: true, completed, skipped };
 });
 
 const driveSync = require('./google-drive-sync');
@@ -367,21 +380,28 @@ function getCurrentUserEmail() {
 
 
 
+let cachedMachineId = null;
 function getMachineId() {
+    if (cachedMachineId) return cachedMachineId;
     try {
         if (process.platform === 'darwin') {
             const stdout = execSync("ioreg -rd1 -c IOPlatformExpertDevice | awk '/IOPlatformUUID/ { print $3 }'").toString();
-            return stdout.replace(/"/g, '').trim();
+            cachedMachineId = stdout.replace(/"/g, '').trim();
+            return cachedMachineId;
         } else if (process.platform === 'win32') {
             try {
                 const stdout = execSync('powershell -Command "(Get-CimInstance -Class Win32_ComputerSystemProduct).UUID"', { timeout: 5000 }).toString();
                 const uuid = stdout.trim();
-                if (uuid && uuid.length > 5) return uuid;
+                if (uuid && uuid.length > 5) {
+                    cachedMachineId = uuid;
+                    return cachedMachineId;
+                }
             } catch (e) {
                 // Fallback: try wmic for older Windows versions
                 try {
                     const stdout = execSync('wmic csproduct get uuid', { timeout: 5000 }).toString();
-                    return stdout.split('\n')[1].trim();
+                    cachedMachineId = stdout.split('\n')[1].trim();
+                    return cachedMachineId;
                 } catch (e2) {
                     safeError('HWID Error (wmic fallback):', e2);
                 }
@@ -390,7 +410,8 @@ function getMachineId() {
     } catch (e) {
         safeError('HWID Error:', e);
     }
-    return os.hostname() + "_" + (os.networkInterfaces().en0?.[0]?.mac || 'nomac');
+    cachedMachineId = os.hostname() + "_" + (os.networkInterfaces().en0?.[0]?.mac || 'nomac');
+    return cachedMachineId;
 }
 
 
@@ -836,6 +857,12 @@ function reloadSpellChecker() {
 let floatingButtonPosition = null;
 let isCreatingFloatingButton = false;
 
+// Minimised ("dot at screen edge") state for the floating bubble
+const FLOATING_BUTTON_SIZE = { width: 160, height: 175 };
+const FLOATING_DOT_SIZE = 30;
+let floatingButtonMinimized = false;
+let floatingButtonExpandedPosition = null; // { x, y } of the full bubble before minimising
+
 function loadFloatingButtonPosition() {
     try {
         const posPath = path.join(app.getPath('userData'), 'floating-button-position.json');
@@ -989,6 +1016,8 @@ function createFloatingButton() {
 
     floatingButton.on('closed', () => {
         floatingButton = null;
+        floatingButtonMinimized = false;
+        floatingButtonExpandedPosition = null;
     });
 
     // Re-assert top position when focus changes
@@ -1029,6 +1058,49 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore) => {
             floatingButton.setIgnoreMouseEvents(false);
         }
     }
+});
+
+function setFloatingButtonBounds(bounds) {
+    // The window is non-resizable for users; temporarily allow programmatic resizing.
+    floatingButton.setResizable(true);
+    floatingButton.setBounds(bounds);
+    floatingButton.setResizable(false);
+}
+
+function sendFloatingButtonMinimized() {
+    if (floatingButton && !floatingButton.isDestroyed()) {
+        floatingButton.webContents.send('bubble-minimized-change', floatingButtonMinimized);
+    }
+}
+
+// Collapse the bubble into a small dot docked to the nearest left/right screen edge
+ipcMain.handle('minimize-floating-button', () => {
+    if (!floatingButton || floatingButton.isDestroyed() || floatingButtonMinimized) return;
+    const { screen } = require('electron');
+    const [x, y] = floatingButton.getPosition();
+    floatingButtonExpandedPosition = { x, y };
+
+    const centre = { x: x + FLOATING_BUTTON_SIZE.width / 2, y: y + FLOATING_BUTTON_SIZE.height / 2 };
+    const { x: left, y: top, width, height } = screen.getDisplayNearestPoint(centre).workArea;
+    const dotX = centre.x < left + width / 2 ? left : left + width - FLOATING_DOT_SIZE;
+    const dotY = Math.min(Math.max(Math.round(centre.y - FLOATING_DOT_SIZE / 2), top), top + height - FLOATING_DOT_SIZE);
+
+    floatingButtonMinimized = true;
+    sendFloatingButtonMinimized();
+    setFloatingButtonBounds({ x: dotX, y: dotY, width: FLOATING_DOT_SIZE, height: FLOATING_DOT_SIZE });
+});
+
+// Restore the full bubble to where it was before minimising
+ipcMain.handle('expand-floating-button', () => {
+    if (!floatingButton || floatingButton.isDestroyed() || !floatingButtonMinimized) return;
+    const fallback = floatingButton.getPosition();
+    const { x, y } = getClampedFloatingButtonPosition(
+        floatingButtonExpandedPosition?.x ?? fallback[0],
+        floatingButtonExpandedPosition?.y ?? fallback[1]
+    );
+    floatingButtonMinimized = false;
+    setFloatingButtonBounds({ x, y, ...FLOATING_BUTTON_SIZE });
+    sendFloatingButtonMinimized();
 });
 
 // Small dialog window for keyword expansion confirmation
@@ -1995,7 +2067,13 @@ async function pasteTextIntoActiveApp(text) {
                 exec(`osascript -e '${script.replace(/'/g, "'\\''")}'`, (error) => {
                     if (error) {
                         safeError('[MediScribe] Paste expansion error:', error);
-                        resolve({ success: false, error: error.message });
+                        const errStr = (error.message || '').toString();
+                        if (errStr.includes('1002') || errStr.includes('not allowed to send keystrokes') || errStr.includes('System Events got an error')) {
+                            isAccessibilityTrusted(true);
+                            resolve({ success: false, error: 'Accessibility permission is required to paste automatically. Please enable MediScribe in System Settings > Privacy & Security > Accessibility.', needsAccessibility: true });
+                        } else {
+                            resolve({ success: false, error: error.message });
+                        }
                     } else {
                         resolve({ success: true });
                     }
@@ -2165,15 +2243,40 @@ end tell`;
 // Helper to type text into any application
 async function typeText(text, restoreWindow = false) {
     if (!readVerifiedEntitlement()?.isActivated) return { success: false, error: 'Active verified access is required' };
-    if (!text) return { success: false, error: 'No text provided' };
+    if (!text || !text.trim() || /^\s*(\[\s*blank[_\s]+audio\s*\]|\(\s*blank[_\s]+audio\s*\))\s*$/i.test(text)) return { success: false, error: 'No text provided' };
 
     console.log(`[MediScribe] Direct typing (${text.length} chars)`);
     if (targetAppName) {
         console.log(`[MediScribe] Target application: "${targetAppName}"`);
     }
 
+    // Always copy dictated text to clipboard as an immediate fail-safe so text is never lost
+    try {
+        const { clipboard } = require('electron');
+        clipboard.writeText(text);
+    } catch (e) {
+        safeError('[MediScribe] Failed to write text to clipboard:', e);
+    }
+
     try {
         if (process.platform === 'darwin') {
+            const { shell } = require('electron');
+
+            // Proactively verify macOS Accessibility permission
+            if (!isAccessibilityTrusted(false)) {
+                safeLog('[MediScribe] Accessibility not granted, requesting permission and opening settings');
+                isAccessibilityTrusted(true);
+                try {
+                    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+                } catch (e) { }
+                return {
+                    success: false,
+                    needsAccessibility: true,
+                    copiedToClipboard: true,
+                    error: 'macOS Accessibility permission is required to insert text into other apps. Your text has been copied to the clipboard (⌘V). Please enable MediScribe in System Settings > Privacy & Security > Accessibility.'
+                };
+            }
+
             const escapedText = text
                 .replace(/\\/g, '\\\\')
                 .replace(/"/g, '\\"')
@@ -2212,9 +2315,25 @@ async function typeText(text, restoreWindow = false) {
                         setTimeout(() => mainWindow.showInactive(), 300);
                     }
                     if (error) {
-                        resolve({ success: false, error: error.message });
+                        safeError('[MediScribe] Direct typing error:', error);
+                        const errStr = (error.message || '').toString();
+                        if (errStr.includes('1002') || errStr.includes('not allowed to send keystrokes') || errStr.includes('System Events got an error') || errStr.includes('-1743')) {
+                            isAccessibilityTrusted(true);
+                            try {
+                                shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+                            } catch (e) { }
+                            resolve({
+                                success: false,
+                                needsAccessibility: true,
+                                copiedToClipboard: true,
+                                error: 'macOS blocked keystrokes (error 1002). Your text has been copied to the clipboard (⌘V). If MediScribe is already listed in System Settings > Privacy & Security > Accessibility, please toggle it OFF and back ON.'
+                            });
+                        } else {
+                            const cleanMessage = errStr.replace(/Command failed: osascript -e '[^']*'\s*/, '').trim() || errStr;
+                            resolve({ success: false, error: cleanMessage, copiedToClipboard: true });
+                        }
                     } else {
-                        resolve({ success: true });
+                        resolve({ success: true, copiedToClipboard: true });
                     }
                 });
             });
@@ -2351,7 +2470,7 @@ function createWindow() {
     });
     // Request microphone and media permissions
     mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
-        const allowedPermissions = webContents === mainWindow.webContents ? ['media', 'audio-capture'] : [];
+        const allowedPermissions = webContents === mainWindow.webContents ? ['media', 'audio-capture', 'microphone'] : [];
         if (allowedPermissions.includes(permission)) {
             console.log(`[MediScribe] Granting permission: ${permission}`);
             callback(true);
@@ -2364,7 +2483,7 @@ function createWindow() {
 
     // Pre-grant microphone permissions
     mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission) => {
-        const allowedPermissions = webContents === mainWindow.webContents ? ['media', 'audio-capture'] : [];
+        const allowedPermissions = webContents === mainWindow.webContents ? ['media', 'audio-capture', 'microphone'] : [];
         return allowedPermissions.includes(permission);
     });
 
@@ -2870,7 +2989,8 @@ function startServerWithModel(serverPath, modelPath) {
     const cwd = path.dirname(serverPath);
 
     try {
-        whisperServerProcess = spawn(serverPath, ['-m', modelPath, '--port', String(whisperServerPort)], {
+        const serverArgs = ['-m', modelPath, '--port', String(whisperServerPort), '--suppress-nst', '--no-context'];
+        whisperServerProcess = spawn(serverPath, serverArgs, {
             cwd,
             stdio: ['ignore', 'pipe', 'pipe'],
             windowsHide: true
@@ -3181,6 +3301,38 @@ app.whenReady().then(() => {
         }
     });
 
+    ipcMain.handle('check-microphone-permission', async () => {
+        if (process.platform === 'darwin') {
+            const { systemPreferences } = require('electron');
+            try {
+                const status = systemPreferences.getMediaAccessStatus('microphone');
+                if (status === 'not-determined') {
+                    const granted = await systemPreferences.askForMediaAccess('microphone');
+                    return granted ? 'granted' : 'denied';
+                }
+                return status;
+            } catch (error) {
+                safeError('[MediScribe] Failed to check microphone permission:', error);
+                return 'granted';
+            }
+        }
+        return 'granted';
+    });
+
+    ipcMain.handle('open-microphone-preferences', async () => {
+        try {
+            const { shell } = require('electron');
+            if (process.platform === 'darwin') {
+                await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+                return true;
+            }
+            return false;
+        } catch (error) {
+            safeError('[MediScribe] Failed to open microphone settings:', error);
+            return false;
+        }
+    });
+
     ipcMain.handle('check-activation', () => {
         return checkActivationStatus();
     });
@@ -3313,6 +3465,7 @@ app.whenReady().then(() => {
     // Typing Mode Management
     ipcMain.handle('get-typing-mode', () => currentTypingMode);
     ipcMain.handle('set-typing-mode', (event, mode) => {
+        if (!['dictation', 'keyword', 'template'].includes(mode)) throw new Error('Invalid typing mode');
         currentTypingMode = mode;
 
         // Auto-control keyword listener based on mode
@@ -3348,13 +3501,22 @@ app.whenReady().then(() => {
 
     ipcMain.handle('set-floating-button-position', (event, x, y) => {
         if (floatingButton) {
+            if (floatingButtonMinimized) {
+                // The dot stays docked to its edge; only slide it vertically.
+                const { screen } = require('electron');
+                const [dotX] = floatingButton.getPosition();
+                const { y: top, height } = screen.getDisplayNearestPoint({ x: dotX, y: Number.isFinite(y) ? y : 0 }).workArea;
+                const dotY = Math.min(Math.max(Number.isFinite(y) ? Math.round(y) : top, top), top + height - FLOATING_DOT_SIZE);
+                floatingButton.setPosition(dotX, dotY);
+                return;
+            }
             const nextPosition = getClampedFloatingButtonPosition(x, y);
             floatingButton.setPosition(nextPosition.x, nextPosition.y);
         }
     });
 
     ipcMain.handle('save-floating-button-position', () => {
-        if (floatingButton) {
+        if (floatingButton && !floatingButtonMinimized) {
             const [x, y] = floatingButton.getPosition();
             saveFloatingButtonPosition(x, y);
         }
@@ -3471,11 +3633,26 @@ app.whenReady().then(() => {
     setupAutoUpdater(mainWindow);  // ← start background update checks
     setupGitHubUpdateCheck(mainWindow); // ← GitHub API fallback (works on all platforms)
 
-    // Request accessibility permissions on macOS (QUIET CHECK - NOT TRIGGERING POPUP)
+    // Check & request accessibility and microphone permissions on macOS
     if (process.platform === 'darwin') {
         const { systemPreferences } = require('electron');
         const isTrusted = systemPreferences.isTrustedAccessibilityClient(false);
         console.log(`[MediScribe] Accessibility trusted: ${isTrusted}`);
+        if (!isTrusted) {
+            // Trigger macOS prompt once so app is registered in Privacy & Security settings
+            setTimeout(() => {
+                systemPreferences.isTrustedAccessibilityClient(true);
+            }, 1000);
+        }
+        try {
+            const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+            console.log(`[MediScribe] Microphone access status: ${micStatus}`);
+            if (micStatus === 'not-determined') {
+                systemPreferences.askForMediaAccess('microphone').catch(e => console.warn('[MediScribe] Mic prompt error:', e));
+            }
+        } catch (e) {
+            console.warn('[MediScribe] Error checking microphone access:', e);
+        }
     }
 
     // Register global shortcuts for quick access
@@ -3885,6 +4062,7 @@ ipcMain.on('request-bubble-state', (event) => {
     if (floatingButton && !floatingButton.isDestroyed()) {
         floatingButton.webContents.send('rec-state-change', isRecording);
         floatingButton.webContents.send('typing-mode-change', currentTypingMode);
+        floatingButton.webContents.send('bubble-minimized-change', floatingButtonMinimized);
     }
 });
 
@@ -4624,7 +4802,15 @@ function convertToWav(inputPath, outputPath) {
 
 // Preserve dictated content: text alone cannot reliably identify hallucinations.
 function cleanTranscriptionText(text) {
-    return typeof text === 'string' ? text.trim() : '';
+    if (typeof text !== 'string') return '';
+    return text
+        .replace(/\[\s*blank[_\s]+audio\s*\]/gi, '')
+        .replace(/\(\s*blank[_\s]+audio\s*\)/gi, '')
+        .replace(/\[\s*no[_\s]+speech\s*\]/gi, '')
+        .replace(/\(\s*no[_\s]+speech\s*\)/gi, '')
+        .replace(/\[\s*silence\s*\]/gi, '')
+        .replace(/\(\s*silence\s*\)/gi, '')
+        .trim();
 }
 
 // Transcribe audio using whisper.cpp
@@ -4813,6 +4999,11 @@ ipcMain.handle('transcribe-audio', async (event, audioBuffer) => {
             // Stage 1: Whisper ASR
             let finalResult = cleanTranscriptionText(result);
             logToFile(`[PIPELINE DEBUG] Stage 1 completed (${finalResult.length} chars)`);
+
+            if (!finalResult) {
+                logToFile('[PIPELINE DEBUG] Transcription result is empty or silence only. Skipping post-processing.');
+                return { success: true, text: '', originalText: '', requiresReview: false };
+            }
 
             // 3-Stage Post-Processing (Standard Only now)
             if (ollamaEnabled) {

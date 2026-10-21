@@ -23,7 +23,7 @@ function setup(provider) {
    count:()=>({get:async()=>({data:()=>({count:[...rows].filter(([k,v])=>k.startsWith(c+'/') && filters.every(([f,vv])=>v[f]===vv)).length})})}) };
  };
  const db={collection,runTransaction:async fn=>fn({get:ref=>ref.get(),set:(ref,v)=>rows.set(ref.key,v)})};
- const admin={apps:[{}],firestore:()=>db,auth:()=>({verifyIdToken:async token=>{if(token==='bad')throw Error();return {uid:'user123',admin:token==='admin'};},getUser:async()=>({email:'test@example.invalid',metadata:{creationTime:'2020-01-01'}})})};
+ const admin={apps:[{}],firestore:()=>db,auth:()=>({verifyIdToken:async token=>{if(token==='bad')throw Error();return {uid:token==='admin'?'admin123':'user123',admin:token==='admin'||token==='revoked-admin'};},getUser:async uid=>({customClaims:{admin:uid==='admin123'},email:'test@example.invalid',metadata:{creationTime:'2020-01-01'}})})};
  admin.firestore.FieldPath = {documentId:()=>'__name__'};
  const module={exports:{}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../server/index.js'),'utf8'),{module,Buffer,URL,AbortSignal,Date,console,
@@ -47,6 +47,16 @@ test('admin endpoints reject missing, invalid and non-admin identities',async()=
 test('client-supplied admin email cannot replace a verified role',async()=>{
  const {request}=setup();
  assert.equal((await request('/v1/admin/reconcile',{token:'user',body:{email:'admin@mediapp.store',paymentId:'pay_test'}})).status,403);
+});
+test('current Auth role grants lifetime access and stale token claims cannot retain it', async () => {
+ const {request}=setup();
+ for (const [token, active] of [['admin', true], ['user', false], ['revoked-admin', false]]) {
+  const result=await request('/v1/entitlement',{token,body:{deviceId:'device123',admin:true}});
+  assert.equal(result.status,200);
+  const claim=JSON.parse(Buffer.from(result.data.entitlement.payload,'base64url'));
+  assert.equal(claim.isActivated,active);
+  assert.equal(claim.billing,active?'lifetime':'trial');
+ }
 });
 test('telemetry is anonymous and idempotent across repeated frontend/native requests',async()=>{
  const {request,rows}=setup();const body={installId:'install123',sessionId:'session123',os:'windows',source:'microsoft_store',email:'ignored@example.invalid',isPro:true};

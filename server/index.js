@@ -42,7 +42,7 @@ async function identity(req) {
   try {
     const decoded = await getAuth().verifyIdToken(match[1], true);
     const user = await getAuth().getUser(decoded.uid);
-    return { uid: decoded.uid, email: user.email || '', admin: decoded.admin === true, createdAt: user.metadata.creationTime };
+    return { uid: decoded.uid, email: user.email || '', admin: user.customClaims?.admin === true, createdAt: user.metadata.creationTime };
   } catch { fail('Session expired. Sign in again.', 401); }
 }
 async function rawBody(req) {
@@ -67,11 +67,155 @@ async function rateLimit(scope, subject, maximum) {
     tx.set('request_limits', id, { count: value.count + 1, until: value.until, expiresAt: new Date(value.until + 3600000) });
   });
 }
-async function telemetry(data) {
+const ISO_MAP = {
+  IN: { name: 'India', flag: '🇮🇳' },
+  US: { name: 'United States', flag: '🇺🇸' },
+  GB: { name: 'United Kingdom', flag: '🇬🇧' },
+  CA: { name: 'Canada', flag: '🇨🇦' },
+  AU: { name: 'Australia', flag: '🇦🇺' },
+  DE: { name: 'Germany', flag: '🇩🇪' },
+  FR: { name: 'France', flag: '🇫🇷' },
+  AE: { name: 'UAE', flag: '🇦🇪' },
+  SA: { name: 'Saudi Arabia', flag: '🇸🇦' },
+  SG: { name: 'Singapore', flag: '🇸🇬' },
+  NZ: { name: 'New Zealand', flag: '🇳🇿' },
+  MY: { name: 'Malaysia', flag: '🇲🇾' },
+  PH: { name: 'Philippines', flag: '🇵🇭' },
+  ZA: { name: 'South Africa', flag: '🇿🇦' },
+  IE: { name: 'Ireland', flag: '🇮🇪' },
+  ES: { name: 'Spain', flag: '🇪🇸' },
+  IT: { name: 'Italy', flag: '🇮🇹' },
+  NL: { name: 'Netherlands', flag: '🇳🇱' },
+  GH: { name: 'Ghana', flag: '🇬🇭' },
+  NG: { name: 'Nigeria', flag: '🇳🇬' },
+  KE: { name: 'Kenya', flag: '🇰🇪' },
+  EG: { name: 'Egypt', flag: '🇪🇬' },
+  PK: { name: 'Pakistan', flag: '🇵🇰' },
+  BD: { name: 'Bangladesh', flag: '🇧🇩' },
+  NP: { name: 'Nepal', flag: '🇳🇵' },
+  LK: { name: 'Sri Lanka', flag: '🇱🇰' },
+  BR: { name: 'Brazil', flag: '🇧🇷' },
+  MX: { name: 'Mexico', flag: '🇲🇽' },
+  JP: { name: 'Japan', flag: '🇯🇵' },
+  KR: { name: 'South Korea', flag: '🇰🇷' },
+  CN: { name: 'China', flag: '🇨🇳' },
+  CH: { name: 'Switzerland', flag: '🇨🇭' },
+  SE: { name: 'Sweden', flag: '🇸🇪' },
+  NO: { name: 'Norway', flag: '🇳🇴' },
+  DK: { name: 'Denmark', flag: '🇩🇰' },
+  FI: { name: 'Finland', flag: '🇫🇮' },
+  BE: { name: 'Belgium', flag: '🇧🇪' },
+  AT: { name: 'Austria', flag: '🇦🇹' },
+  IL: { name: 'Israel', flag: '🇮🇱' },
+  TR: { name: 'Turkey', flag: '🇹🇷' },
+  ID: { name: 'Indonesia', flag: '🇮🇩' },
+  TH: { name: 'Thailand', flag: '🇹🇭' },
+  VN: { name: 'Vietnam', flag: '🇻🇳' },
+};
+
+const PHONE_PREFIX_MAP = [
+  ['+233', 'GH'], ['+234', 'NG'], ['+254', 'KE'], ['+880', 'BD'],
+  ['+977', 'NP'], ['+971', 'AE'], ['+966', 'SA'], ['+972', 'IL'],
+  ['+353', 'IE'], ['+358', 'FI'], ['+974', 'QA'], ['+968', 'OM'],
+  ['+965', 'KW'], ['+973', 'BH'],
+  ['+91', 'IN'],  ['+44', 'GB'],  ['+61', 'AU'],  ['+49', 'DE'],
+  ['+33', 'FR'],  ['+65', 'SG'],  ['+63', 'PH'],  ['+27', 'ZA'],
+  ['+92', 'PK'],  ['+94', 'LK'],  ['+20', 'EG'],  ['+90', 'TR'],
+  ['+62', 'ID'],  ['+60', 'MY'],  ['+64', 'NZ'],  ['+34', 'ES'],
+  ['+39', 'IT'],  ['+31', 'NL'],  ['+41', 'CH'],  ['+46', 'SE'],
+  ['+47', 'NO'],  ['+45', 'DK'],  ['+81', 'JP'],  ['+82', 'KR'],
+  ['+86', 'CN'],  ['+55', 'BR'],  ['+52', 'MX'],  ['+54', 'AR'],
+  ['+57', 'CO'],  ['+56', 'CL'],  ['+1', 'US'],
+];
+
+function resolveSubscriberCountry(info = {}) {
+  if (info.country) {
+    if (typeof info.country === 'object' && info.country.name && info.country.name !== 'Unknown') {
+      return { name: info.country.name, code: info.country.code || '', flag: info.country.flag || ISO_MAP[info.country.code?.toUpperCase()]?.flag || '🌐' };
+    }
+    if (typeof info.country === 'string') {
+      const code = info.country.toUpperCase();
+      if (ISO_MAP[code]) return { name: ISO_MAP[code].name, code, flag: ISO_MAP[code].flag };
+    }
+  }
+  const cardCode = info.cardCountry?.toUpperCase() ||
+    info.history?.find(p => p.cardCountry || p.card?.country)?.cardCountry?.toUpperCase() ||
+    info.history?.find(p => p.card?.country)?.card?.country?.toUpperCase();
+  if (cardCode && ISO_MAP[cardCode]) return { name: ISO_MAP[cardCode].name, code: cardCode, flag: ISO_MAP[cardCode].flag };
+
+  const phone = info.phone ||
+    info.history?.find(p => p.contact || p.phone)?.contact ||
+    info.history?.find(p => p.phone)?.phone;
+  if (phone && typeof phone === 'string') {
+    const clean = phone.replace(/[^\d+]/g, '');
+    const normalized = clean.startsWith('+') ? clean : (clean.length >= 11 && clean.startsWith('91') ? '+' + clean : '+' + clean);
+    for (const [prefix, iso] of PHONE_PREFIX_MAP) {
+      if (normalized.startsWith(prefix)) {
+        const found = ISO_MAP[iso];
+        if (found) return { name: found.name, code: iso, flag: found.flag };
+      }
+    }
+  }
+
+  if (info.email && typeof info.email === 'string') {
+    const email = info.email.toLowerCase().trim();
+    if (email.endsWith('@aiims.edu') || /@(.*\.)?aiims\.edu$/.test(email)) return { name: 'India', code: 'IN', flag: '🇮🇳' };
+    if (/\.(in|co\.in|ac\.in|edu\.in|gov\.in|res\.in)$/.test(email)) return { name: 'India', code: 'IN', flag: '🇮🇳' };
+    if (/\.(uk|co\.uk|nhs\.uk|ac\.uk|gov\.uk)$/.test(email)) return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
+    if (/\.(ca|gc\.ca|on\.ca|qc\.ca)$/.test(email)) return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
+    if (/\.(au|com\.au|edu\.au|gov\.au)$/.test(email)) return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
+    if (/\.(gh|edu\.gh|com\.gh|gov\.gh)$/.test(email)) return { name: 'Ghana', code: 'GH', flag: '🇬🇭' };
+    if (/\.(ng|edu\.ng|gov\.ng|com\.ng)$/.test(email)) return { name: 'Nigeria', code: 'NG', flag: '🇳🇬' };
+    if (/\.(za|co\.za|ac\.za)$/.test(email)) return { name: 'South Africa', code: 'ZA', flag: '🇿🇦' };
+    if (/\.(ph|com\.ph|edu\.ph)$/.test(email)) return { name: 'Philippines', code: 'PH', flag: '🇵🇭' };
+    if (/\.(sg|com\.sg|edu\.sg)$/.test(email)) return { name: 'Singapore', code: 'SG', flag: '🇸🇬' };
+    if (/\.de$/.test(email)) return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
+    if (/\.fr$/.test(email)) return { name: 'France', code: 'FR', flag: '🇫🇷' };
+    if (/\.(nz|co\.nz)$/.test(email)) return { name: 'New Zealand', code: 'NZ', flag: '🇳🇿' };
+    if (/\.ie$/.test(email)) return { name: 'Ireland', code: 'IE', flag: '🇮🇪' };
+    if (/\.es$/.test(email)) return { name: 'Spain', code: 'ES', flag: '🇪🇸' };
+    if (/\.it$/.test(email)) return { name: 'Italy', code: 'IT', flag: '🇮🇹' };
+    if (/\.nl$/.test(email)) return { name: 'Netherlands', code: 'NL', flag: '🇳🇱' };
+    if (/\.(jp|co\.jp)$/.test(email)) return { name: 'Japan', code: 'JP', flag: '🇯🇵' };
+    if (/\.(br|com\.br)$/.test(email)) return { name: 'Brazil', code: 'BR', flag: '🇧🇷' };
+    if (/\.(mx|com\.mx)$/.test(email)) return { name: 'Mexico', code: 'MX', flag: '🇲🇽' };
+    if (/\.(mil|gov)$/.test(email)) return { name: 'United States', code: 'US', flag: '🇺🇸' };
+  }
+
+  if (info.timezone && typeof info.timezone === 'string') {
+    const tz = info.timezone.toLowerCase();
+    if (tz.includes('kolkata') || tz.includes('calcutta')) return { name: 'India', code: 'IN', flag: '🇮🇳' };
+    if (tz.includes('accra')) return { name: 'Ghana', code: 'GH', flag: '🇬🇭' };
+    if (tz.includes('lagos')) return { name: 'Nigeria', code: 'NG', flag: '🇳🇬' };
+    if (tz.includes('london')) return { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' };
+    if (tz.includes('new_york') || tz.includes('chicago') || tz.includes('denver') || tz.includes('los_angeles') || tz.includes('phoenix') || tz.includes('detroit') || tz.includes('anchorage') || tz.includes('honolulu')) {
+      return { name: 'United States', code: 'US', flag: '🇺🇸' };
+    }
+    if (tz.includes('toronto') || tz.includes('vancouver') || tz.includes('montreal') || tz.includes('edmonton')) return { name: 'Canada', code: 'CA', flag: '🇨🇦' };
+    if (tz.includes('sydney') || tz.includes('melbourne') || tz.includes('brisbane') || tz.includes('perth')) return { name: 'Australia', code: 'AU', flag: '🇦🇺' };
+    if (tz.includes('berlin')) return { name: 'Germany', code: 'DE', flag: '🇩🇪' };
+    if (tz.includes('paris')) return { name: 'France', code: 'FR', flag: '🇫🇷' };
+    if (tz.includes('dubai')) return { name: 'UAE', code: 'AE', flag: '🇦🇪' };
+    if (tz.includes('riyadh')) return { name: 'Saudi Arabia', code: 'SA', flag: '🇸🇦' };
+    if (tz.includes('singapore')) return { name: 'Singapore', code: 'SG', flag: '🇸🇬' };
+    if (tz.includes('manila')) return { name: 'Philippines', code: 'PH', flag: '🇵🇭' };
+    if (tz.includes('johannesburg')) return { name: 'South Africa', code: 'ZA', flag: '🇿🇦' };
+  }
+
+  const hasUpi = info.history?.some(p => p.method === 'upi' || p.vpa || (p.notes && p.notes.vpa));
+  if (hasUpi || (info.currency === 'INR' && !info.international)) return { name: 'India', code: 'IN', flag: '🇮🇳' };
+
+  return { name: 'Unknown', code: '', flag: '🌐' };
+}
+
+async function telemetry(data, req = null) {
   if (!validId(data.installId) || !validId(data.sessionId)) fail('Invalid event IDs');
   const os = ['windows', 'mac', 'linux', 'android', 'ios', 'unknown'].includes(data.os) ? data.os : 'unknown';
   const source = ['microsoft_store', 'mac_app_store', 'direct', 'website', 'android', 'unknown'].includes(data.source) ? data.source : 'unknown';
-  const value = { app: 'mediscribe', installId: data.installId, sessionId: data.sessionId, os, source, country: 'Unknown', isGuest: true, timestamp: new Date().toISOString(), version: String(data.version || '').slice(0, 30) };
+  const cloudCountry = req?.headers ? (req.headers['x-appengine-country'] || req.headers['cf-ipcountry'] || null) : null;
+  const ip = req?.headers ? ((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null) : null;
+  const countryObj = resolveSubscriberCountry({ country: cloudCountry, timezone: data.timezone });
+  const value = { app: 'mediscribe', installId: data.installId, sessionId: data.sessionId, os, source, country: countryObj.name, isGuest: true, timestamp: new Date().toISOString(), version: String(data.version || '').slice(0, 30), ip };
   await store.transaction(async tx => {
     const first = await tx.get('downloads', data.installId);
     const launch = await tx.get('app_launches', data.sessionId);
@@ -115,8 +259,18 @@ async function adminData(url) {
     const status = active ? `Active Pro (${license.billing === 'yearly' ? 'Yearly' : 'Monthly'})` : trial ? 'Free Trial (Active)' : refunded ? 'Refunded' : license ? 'Expired' : user.trialExpiresAt ? 'Free Trial (Expired)' : 'Inactive / Free';
     summary[active ? 'activePro' : trial ? 'trial' : refunded ? 'refunded' : status.includes('Expired') ? 'expired' : 'free']++;
     const expiresAt = license?.expiresAt || user.trialExpiresAt;
-    return { userId: doc.id, displayName: user.displayName || user.email || doc.id, email: user.email || null, phone: null, hwid: null,
-      country: { name: 'Unknown', code: '', flag: '🌐' }, currentPlan: active ? license.billing : trial ? 'trial' : 'free', status, isActive: active || trial, isTrial: trial,
+    const phone = user.phoneNumber || user.phone || last?.contact || history[0]?.contact || null;
+    const country = resolveSubscriberCountry({
+      country: user.country,
+      phone,
+      email: user.email,
+      currency,
+      cardCountry: last?.cardCountry || last?.card?.country || history[0]?.cardCountry || history[0]?.card?.country,
+      timezone: user.timezone,
+      history,
+    });
+    return { userId: doc.id, displayName: user.displayName || user.email || doc.id, email: user.email || null, phone, hwid: user.deviceId || null,
+      country, currentPlan: active ? license.billing : trial ? 'trial' : 'free', status, isActive: active || trial, isTrial: trial,
       startDate: license?.date || user.createdAt || '—', rawStartDate: license?.date || user.createdAt || null, expiresAt: expiresAt || '—', rawExpiresAt: expiresAt || null,
       daysRemaining: expiresAt ? Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 86400000)) : null, validityText: active || trial ? 'Active' : 'Inactive',
       currentAmount: last?.amount || 0, currentAmountFormatted: money(last?.amount || 0, currency), totalAmountSubscribed: total, totalAmountSubscribedFormatted: money(total, currency), currency, source: 'Backend', history, historyTruncated: truncated.has(doc.id) };
@@ -192,11 +346,19 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ success: true }));
     }
     const data = raw.length ? JSON.parse(raw) : {};
-    if (req.url === '/v1/telemetry' && req.method === 'POST') return res.end(JSON.stringify(await telemetry(data)));
+    if (req.url === '/v1/telemetry' && req.method === 'POST') return res.end(JSON.stringify(await telemetry(data, req)));
     const user = await identity(req);
     await rateLimit('authenticated', user.uid, 120);
     let result;
-    if (req.url === '/v1/entitlement' && req.method === 'POST') result = await billing.entitlement(user, data.deviceId);
+    if (req.url === '/v1/entitlement' && req.method === 'POST') {
+      result = await billing.entitlement(user, data.deviceId);
+      const cloudCountry = req.headers['x-appengine-country'] || req.headers['cf-ipcountry'] || null;
+      const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+      const detected = resolveSubscriberCountry({ country: cloudCountry, timezone: data.timezone, email: user.email, phone: user.phoneNumber });
+      if (detected.name !== 'Unknown') {
+        db.collection('users').doc(user.uid).set({ country: detected, lastIp: ip, timezone: data.timezone || null, lastSeenAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+      }
+    }
     else if (req.url === '/v1/orders' && req.method === 'POST') result = await billing.createOrder(user, data);
     else if (req.url === '/v1/orders/status' && req.method === 'POST') {
       if (!/^order_[A-Za-z0-9]+$/.test(data.orderId || '')) fail('Invalid order');

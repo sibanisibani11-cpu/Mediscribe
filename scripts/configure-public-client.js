@@ -4,8 +4,8 @@ const crypto = require('node:crypto');
 require('dotenv').config({ quiet: true });
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 const entitlementPublicKey = (process.env.ENTITLEMENT_PUBLIC_KEY || '').replace(/\\n/g, '\n');
-let googleClientId = process.env.GOOGLE_DESKTOP_CLIENT_ID || '';
-let googleDesktopClientSecret = process.env.GOOGLE_DESKTOP_CLIENT_SECRET || '';
+let googleClientId = process.env.GOOGLE_DESKTOP_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '';
+let googleDesktopClientSecret = process.env.GOOGLE_DESKTOP_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || '';
 if (process.env.GOOGLE_DESKTOP_CLIENT_FILE) {
   const installed = JSON.parse(fs.readFileSync(process.env.GOOGLE_DESKTOP_CLIENT_FILE, 'utf8')).installed;
   if (!installed?.client_id || !installed?.client_secret) throw new Error('Use a downloaded Google Desktop app client JSON (installed), not a web client');

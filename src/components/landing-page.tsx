@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, Keyboard, ArrowRight, Cloud, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
+import { Mic, Keyboard, ArrowRight, Cloud, CloudOff, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
 import { openExternalUrl } from "../lib/utils";
 import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
@@ -171,6 +171,13 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
           </div>
         )}
 
+        <div className="flex justify-center mt-2">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-600/10 border border-violet-500/25 text-violet-900 dark:text-violet-200 text-xs font-semibold shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-700 backdrop-blur-sm">
+            <CloudOff className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400" />
+            <span>Works Offline • No Internet Connection Required</span>
+          </div>
+        </div>
+
         {appVersion && (
           <div className="mt-4 p-3 rounded-xl bg-violet-500/5 border border-violet-500/20 max-w-md mx-auto animate-in fade-in slide-in-from-bottom-2 duration-1000">
             <div className="flex items-center justify-center gap-2">
@@ -273,7 +280,7 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
         <div className="glass-card rounded-2xl p-6 border border-slate-200 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-purple-100 dark:bg-sky-900/30 flex items-center justify-center text-purple-500">
+              <div className="h-12 w-12 rounded-full bg-purple-100 dark:bg-sky-900/30 flex items-center justify-center text-violet-600">
                 <Cloud className="h-6 w-6" />
               </div>
               <div>

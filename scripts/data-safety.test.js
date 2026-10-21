@@ -13,6 +13,12 @@ const clean = vm.runInNewContext(`(${cleanupNode.getText(tree)})`);
 for (const text of ['.5 mg', '-5 mm', '+2', 'Arm (left) pain.', '[left] arm', '≤5 mm', 'Thank you.', 'Copyright discussed.', '中文', 'Line 1\nLine 2']) {
   test(`cleanup preserves ${JSON.stringify(text)}`, () => assert.equal(clean(`  ${text}  `), text));
 }
+for (const token of ['[BLANK_AUDIO]', ' [blank audio] ', '(BLANK_AUDIO)', '[blank_audio]', '[silence]', '[no speech]']) {
+  test(`cleanup strips silence token ${JSON.stringify(token)}`, () => assert.equal(clean(token), ''));
+}
+test('cleanup strips embedded silence tokens from speech', () => {
+  assert.equal(clean('[BLANK_AUDIO] Patient has normal lung sounds [BLANK_AUDIO]'), 'Patient has normal lung sounds');
+});
 function setup(t, overrides = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mediscribe-safety-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -78,6 +84,21 @@ test('push reports failed upload', async t => {
   const { sync, local } = setup(t);
   sync.uploadFile = async () => false;
   await assert.rejects(sync.sync('user-dictionary.json', local, 'push'), /upload failed/);
+});
+test('push skips an absent local library without reading or overwriting cloud data', async t => {
+  const { sync, local } = setup(t);
+  fs.unlinkSync(local);
+  sync.getRemoteData = async () => { throw Error('must not read cloud'); };
+  sync.uploadFile = async () => { throw Error('must not overwrite cloud'); };
+  const result = await sync.sync('user-keywords.json', local, 'push');
+  assert.equal(result.skipped, true);
+  assert.equal(fs.existsSync(local), false);
+});
+test('merge restores an absent local library from cloud', async t => {
+  const { sync, local } = setup(t);
+  fs.unlinkSync(local);
+  await sync.sync('user-dictionary.json', local, 'merge');
+  assert.deepEqual(require('../electron/library-store').values(JSON.parse(fs.readFileSync(local))), ['remote']);
 });
 test('corrupt local data aborts merge', async t => {
   const { sync, local } = setup(t);

@@ -20,6 +20,28 @@ test('canonical prices preserve fractional currency and reject unknown plans/pro
   assert.throws(() => priceFor('lifetime','USD'));
   assert.throws(() => priceFor('yearly','USD','FREE'));
 });
+test('verified administrator gets renewable lifetime access after trial expiry', async () => {
+  const s = setup();
+  s.advance(10 * 86400000);
+  const now = s.now + 10 * 86400000;
+  const { entitlement } = await s.billing.entitlement({ ...s.identity, admin: true }, 'device123');
+  const claim = verifyEntitlement(entitlement, s.keys.publicKey, 'device123', s.identity.uid, now);
+  assert.equal(claim.isActivated, true);
+  assert.equal(claim.billing, 'lifetime');
+  assert.equal(verifyEntitlement(entitlement, s.keys.publicKey, 'device123', s.identity.uid, now + 3 * 86400000), null);
+  assert.equal(s.rows.get('users/user123').isActivated, false);
+});
+test('stored admin flags and removed Auth role cannot grant lifetime access', async () => {
+  const s = setup();
+  s.advance(10 * 86400000);
+  s.rows.set('users/user123', { admin: true, isActivated: true, licenseDetails: { billing: 'lifetime', expiresAt: '2099-01-01' } });
+  for (const admin of [false, undefined, 'true']) {
+    const { entitlement } = await s.billing.entitlement({ ...s.identity, admin }, 'device123');
+    const claim = JSON.parse(Buffer.from(entitlement.payload, 'base64url'));
+    assert.equal(claim.isActivated, false);
+    assert.equal(claim.billing, 'trial');
+  }
+});
 test('captured payment is durably fulfilled once and signed for the correct installation', async () => {
   const s=setup(); await s.billing.createOrder(s.identity,{plan:'yearly',currency:'USD',deviceId:'device123'});
   await s.billing.fulfill(s.payment.id,s.identity);

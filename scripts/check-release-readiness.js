@@ -25,7 +25,9 @@ if (t) {
       const client = JSON.parse(fs.readFileSync(process.env.GOOGLE_DESKTOP_CLIENT_FILE)).installed;
       return client?.client_id?.endsWith('.apps.googleusercontent.com') && !!client.client_secret;
     }
-    return process.env.GOOGLE_DESKTOP_CLIENT_ID?.endsWith('.apps.googleusercontent.com') && !!process.env.GOOGLE_DESKTOP_CLIENT_SECRET;
+    const id = process.env.GOOGLE_DESKTOP_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+    const secret = process.env.GOOGLE_DESKTOP_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+    return id?.endsWith('.apps.googleusercontent.com') && !!secret;
   });
   for (const [name, id] of [['ffmpeg_source','all'],['ollama',t.id],[t.platform==='win32'?'whisper':'whisper_source',t.platform==='win32'?t.id:'all'],['ggml-base.en','all'],['ggml-tiny','all'],...(t.platform==='win32'?[['vcredist',t.id]]:[])]) {
     check('reviewed native pin ' + name + '/' + id, () => { const pin = asset(name,id);return new URL(pin.url).protocol === 'https:'; });

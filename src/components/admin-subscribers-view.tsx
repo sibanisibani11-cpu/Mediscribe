@@ -1,8 +1,252 @@
 "use client";
 import { backendRequest } from "../lib/backend";
 import { subscriberCSV } from "../lib/subscriber-csv";
+import { auth } from "../lib/firebase";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+
+const PREVIEW_SUBSCRIBERS: AdminSubscribersResponse = {
+  success: true,
+  summary: {
+    totalUsers: 7,
+    activePro: 1,
+    trial: 0,
+    expired: 4,
+    refunded: 0,
+    free: 2,
+    totalRevenueINR: 1490,
+  },
+  pagination: {
+    limit: 50,
+    nextCursor: null,
+    totalUsers: 7,
+  },
+  operations: {
+    lastCompletedAt: new Date().toISOString(),
+    openIssues: 0,
+    stale: false,
+    lastChecked: 1,
+    lastFailed: 0,
+  },
+  downloads: {
+    total: 12,
+    windows: 8,
+    mac: 4,
+    linux: 0,
+    guest: 12,
+    loggedIn: 0,
+    launches: { total: 45, guest: 45, loggedIn: 0 },
+    sources: {
+      msStore: {
+        total: 8,
+        startDate: '2026-09-01',
+        endDate: '2026-10-16',
+        syncedAt: new Date().toISOString(),
+      },
+    },
+  },
+  subscribers: [
+    {
+      userId: 'DEMO_USER_001',
+      displayName: 'Dr. A. Verma',
+      email: 'doctor.verma@example.com',
+      phone: '+91 98765 43210',
+      hwid: 'HWID-PREVIEW-001',
+      country: { name: 'India', code: 'IN', flag: '🇮🇳' },
+      currentPlan: 'yearly',
+      status: 'Active Pro (Yearly)',
+      isActive: true,
+      isTrial: false,
+      startDate: '2026-04-27T14:53:19.000Z',
+      rawStartDate: '2026-04-27T14:53:19.000Z',
+      expiresAt: '2027-04-27T14:53:19.000Z',
+      rawExpiresAt: '2027-04-27T14:53:19.000Z',
+      daysRemaining: 192,
+      validityText: 'Active',
+      currentAmount: 1490,
+      currentAmountFormatted: '₹1,490',
+      totalAmountSubscribed: 1490,
+      totalAmountSubscribedFormatted: '₹1,490',
+      currency: 'INR',
+      source: 'Razorpay',
+      history: [
+        {
+          id: 'hist_preview_001',
+          paymentId: 'pay_preview_001',
+          orderId: 'order_preview_001',
+          uid: 'DEMO_USER_001',
+          billing: 'yearly',
+          currency: 'INR',
+          amount: 1490,
+          amountRefunded: 0,
+          netAmount: 1490,
+          status: 'captured',
+          date: '2026-04-27T14:53:19.000Z',
+          rawDate: '2026-04-27T14:53:19.000Z',
+          recordedAt: '2026-04-27T14:53:25.000Z',
+          source: 'Razorpay',
+        },
+      ],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_002',
+      displayName: 'Dr. J. Sharma',
+      email: 'doctor.sharma@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'India', code: 'IN', flag: '🇮🇳' },
+      currentPlan: 'trial',
+      status: 'Free Trial (Expired)',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-09-26T10:15:46.000Z',
+      rawStartDate: '2026-09-26T10:15:46.000Z',
+      expiresAt: '2026-10-03T10:15:46.000Z',
+      rawExpiresAt: '2026-10-03T10:15:46.000Z',
+      daysRemaining: 0,
+      validityText: 'Expired',
+      currentAmount: 0,
+      currentAmountFormatted: '₹0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '₹0',
+      currency: 'INR',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_003',
+      displayName: 'Dr. L. Tamakloe',
+      email: 'doctor.tamakloe@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'United States', code: 'US', flag: '🇺🇸' },
+      currentPlan: 'trial',
+      status: 'Free Trial (Expired)',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-10-03T18:02:05.740Z',
+      rawStartDate: '2026-10-03T18:02:05.740Z',
+      expiresAt: '2026-10-10T18:02:05.740Z',
+      rawExpiresAt: '2026-10-10T18:02:05.740Z',
+      daysRemaining: 0,
+      validityText: 'Expired',
+      currentAmount: 0,
+      currentAmountFormatted: '$0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '$0',
+      currency: 'USD',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_004',
+      displayName: 'Dr. D. Godbold',
+      email: 'doctor.godbold@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'United Kingdom', code: 'GB', flag: '🇬🇧' },
+      currentPlan: 'trial',
+      status: 'Free Trial (Expired)',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-10-03T16:38:38.296Z',
+      rawStartDate: '2026-10-03T16:38:38.296Z',
+      expiresAt: '2026-10-10T16:38:38.296Z',
+      rawExpiresAt: '2026-10-10T16:38:38.296Z',
+      daysRemaining: 0,
+      validityText: 'Expired',
+      currentAmount: 0,
+      currentAmountFormatted: '£0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '£0',
+      currency: 'GBP',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_005',
+      displayName: 'Dr. T. Nelson',
+      email: 'doctor.nelson@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'United States', code: 'US', flag: '🇺🇸' },
+      currentPlan: 'trial',
+      status: 'Free Trial (Expired)',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-09-21T17:23:15.938Z',
+      rawStartDate: '2026-09-21T17:23:15.938Z',
+      expiresAt: '2026-09-28T17:23:15.938Z',
+      rawExpiresAt: '2026-09-28T17:23:15.938Z',
+      daysRemaining: 0,
+      validityText: 'Expired',
+      currentAmount: 0,
+      currentAmountFormatted: '$0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '$0',
+      currency: 'USD',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_006',
+      displayName: 'Dr. J. Jaleel',
+      email: 'doctor.jaleel@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'India', code: 'IN', flag: '🇮🇳' },
+      currentPlan: 'free',
+      status: 'Inactive / Free',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-08-19T10:37:19.765Z',
+      rawStartDate: '2026-08-19T10:37:19.765Z',
+      expiresAt: '—',
+      rawExpiresAt: null,
+      daysRemaining: null,
+      validityText: 'Inactive',
+      currentAmount: 0,
+      currentAmountFormatted: '₹0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '₹0',
+      currency: 'INR',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+    {
+      userId: 'DEMO_USER_007',
+      displayName: 'MS Store Reviewer',
+      email: 'mstest_reviewer@example.com',
+      phone: null,
+      hwid: null,
+      country: { name: 'United States', code: 'US', flag: '🇺🇸' },
+      currentPlan: 'free',
+      status: 'Inactive / Free',
+      isActive: false,
+      isTrial: false,
+      startDate: '2026-08-05T03:02:18.998Z',
+      rawStartDate: '2026-08-05T03:02:18.998Z',
+      expiresAt: '—',
+      rawExpiresAt: null,
+      daysRemaining: null,
+      validityText: 'Inactive',
+      currentAmount: 0,
+      currentAmountFormatted: '$0',
+      totalAmountSubscribed: 0,
+      totalAmountSubscribedFormatted: '$0',
+      currency: 'USD',
+      source: 'Backend',
+      history: [],
+      historyTruncated: false,
+    },
+  ],
+};
 import {
   ShieldCheck,
   Search,
@@ -29,7 +273,7 @@ import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { useToast } from '../hooks/use-toast';
 import { cn } from '../lib/utils';
-import { AdminSubscriberRecord, AdminSubscribersResponse, DownloadStats } from '../lib/admin-subscribers-service';
+import { AdminSubscriberRecord, AdminSubscribersResponse, DownloadStats, detectCountry } from '../lib/admin-subscribers-service';
 
 interface AdminSubscribersViewProps {
   onBack: () => void;
@@ -79,17 +323,49 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     const request = ++requestNumber.current;
     setIsLoading(true);
     try {
-      const data = await backendRequest('/v1/admin/subscribers?limit=50' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''));
+      const isPreview = currentUser === 'doctor.preview@mediscribe.ai' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'));
+      let data: AdminSubscribersResponse;
+      if (isPreview && !auth?.currentUser) {
+        data = PREVIEW_SUBSCRIBERS;
+      } else {
+        data = await backendRequest('/v1/admin/subscribers?limit=50' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''));
+      }
       if (request !== requestNumber.current) return;
       setNextCursor(data.pagination?.nextCursor || null);
-      setDirectoryTotal(data.pagination?.totalUsers ?? null);
-      setSubscribers(data.subscribers);
-      setSummary(data.summary);
+      const enriched = (data.subscribers || []).map(sub => {
+        if (!sub.country || sub.country.name === 'Unknown') {
+          const detected = detectCountry({
+            phone: sub.phone || sub.history?.[0]?.contact,
+            email: sub.email,
+            currency: sub.currency,
+            cardCountry: (sub.history?.[0] as any)?.cardCountry || (sub.history?.[0] as any)?.card?.country,
+            history: sub.history,
+          });
+          if (detected.name !== 'Unknown') {
+            return { ...sub, country: detected };
+          }
+        }
+        return sub;
+      });
+      setSubscribers(enriched);
+      setSummary(data.summary || { totalUsers: 0, activePro: 0, trial: 0, expired: 0, refunded: 0, free: 0, totalRevenueINR: 0 });
       setDownloadStats(data.downloads || null);
       setOperations(data.operations);
     } catch (err: any) {
       if (request !== requestNumber.current) return;
       console.error('[AdminSubscribersView] Error loading data:', err);
+      // In dev preview mode, gracefully fallback to preview subscriber records
+      const isPreview = currentUser === 'doctor.preview@mediscribe.ai' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'));
+      if (isPreview) {
+        const data = PREVIEW_SUBSCRIBERS;
+        setNextCursor(data.pagination?.nextCursor || null);
+        setDirectoryTotal(data.pagination?.totalUsers ?? null);
+        setSubscribers(data.subscribers);
+        setSummary(data.summary);
+        setDownloadStats(data.downloads || null);
+        setOperations(data.operations);
+        return;
+      }
       toast({
         variant: 'destructive',
         title: 'Error Loading Subscribers',
@@ -98,7 +374,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
     } finally {
       if (request === requestNumber.current) setIsLoading(false);
     }
-  }, [cursor, toast]);
+  }, [cursor, currentUser, toast]);
 
   useEffect(() => {
     loadSubscribersData();
@@ -203,13 +479,13 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-violet-600/10 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold">
+            <div className="h-7 w-7 rounded-lg bg-violet-700/10 dark:bg-violet-500/20 text-violet-700 dark:text-purple-400 flex items-center justify-center font-bold">
               <ShieldCheck className="h-4 w-4" />
             </div>
             <div>
               <h1 className="text-base font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 Subscriber & Revenue Intelligence
-                <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 rounded-full border border-violet-200 dark:border-violet-800">
+                <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950/60 text-violet-700 dark:text-purple-300 rounded-full border border-purple-200 dark:border-purple-800">
                   Admin Only
                 </span>
               </h1>
@@ -272,12 +548,12 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         </div>
 
         {/* Card 2: Net INR (This Page) */}
-        <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-violet-950/40 dark:via-violet-950/20 dark:to-transparent border border-violet-200/60 dark:border-violet-800/40 shadow-sm">
+        <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-purple-950/40 dark:via-purple-950/20 dark:to-transparent border border-purple-200/60 dark:border-purple-800/40 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-violet-400">
+            <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-purple-400">
               Net INR in Shown History
             </span>
-            <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-700 dark:text-purple-400 flex items-center justify-center">
               <TrendingUp className="h-4 w-4" />
             </div>
           </div>
@@ -285,7 +561,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             <span className="text-2xl font-black text-slate-900 dark:text-white">
               ₹{summary.totalRevenueINR.toLocaleString('en-IN')}
             </span>
-            <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wider">
+            <span className="text-[10px] font-bold text-violet-700 dark:text-purple-400 uppercase tracking-wider">
               INR
             </span>
           </div>
@@ -314,18 +590,18 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
         </div>
 
         {/* Card 3: Free Trial Active */}
-        <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-violet-950/40 dark:via-violet-950/20 dark:to-transparent border border-violet-200/60 dark:border-violet-800/40 shadow-sm">
+        <div className="relative overflow-hidden p-4 rounded-2xl bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-purple-950/40 dark:via-purple-950/20 dark:to-transparent border border-purple-200/60 dark:border-purple-800/40 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-violet-400">
+            <span className="text-[11px] font-black uppercase tracking-wider text-violet-700 dark:text-purple-400">
               7-Day Free Trials
             </span>
-            <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-600 dark:text-violet-400 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-xl bg-violet-500/20 text-violet-700 dark:text-purple-400 flex items-center justify-center">
               <Sparkles className="h-4 w-4" />
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 dark:text-white">{summary.trial || 0}</span>
-            <span className="text-[11px] font-bold text-violet-600 dark:text-violet-400">Trial Active</span>
+            <span className="text-[11px] font-bold text-violet-700 dark:text-purple-400">Trial Active</span>
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1">
             Potential Pro conversion pipeline
@@ -367,10 +643,10 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
 
       {/* MediScribe Download & Platform Intelligence Card */}
       {downloadStats && (
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 dark:from-slate-900/90 dark:via-violet-950/30 dark:to-slate-950 border border-violet-500/20 shadow-xl p-5 text-white">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 dark:from-slate-900/90 dark:via-purple-950/30 dark:to-slate-950 border border-violet-500/20 shadow-xl p-5 text-white">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
+              <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
                 <Download className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -382,7 +658,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
                     Source Reports
                   </span>
-                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-violet-500/20 text-violet-300 rounded-full border border-violet-400/30">
+                  <span className="px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-violet-500/20 text-purple-300 rounded-full border border-purple-400/30">
                     App / Store / GitHub
                   </span>
                 </div>
@@ -460,7 +736,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                   <span className="text-lg">🍎</span>
                   <span className="text-xs font-black text-white tracking-wide">macOS First Opens</span>
                 </div>
-                <span className="text-xs font-bold text-violet-400">
+                <span className="text-xs font-bold text-purple-400">
                   {downloadStats.total > 0 ? `${Math.round((downloadStats.mac / downloadStats.total) * 100)}%` : '0%'}
                 </span>
               </div>
@@ -471,7 +747,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               {/* Progress bar */}
               <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
                 <div
-                  className="bg-gradient-to-r from-violet-500 to-fuchsia-500 h-full rounded-full transition-all duration-500"
+                  className="bg-gradient-to-r from-violet-500 to-cyan-500 h-full rounded-full transition-all duration-500"
                   style={{ width: `${downloadStats.total > 0 ? (downloadStats.mac / downloadStats.total) * 100 : 0}%` }}
                 />
               </div>
@@ -516,7 +792,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                 <span className="font-bold text-white">Not collected</span>
               </div>
               <div className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-white/5">
-                <span className="h-2 w-2 rounded-full bg-violet-400" />
+                <span className="h-2 w-2 rounded-full bg-purple-400" />
                 <span className="text-slate-300 font-medium">Anonymous Opens:</span>
                 <span className="font-bold text-white">{downloadStats.launches?.guest ?? 0}</span>
               </div>
@@ -561,8 +837,8 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
             className={cn(
               'px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5',
               activeTab === 'trial'
-                ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/20'
-                : 'text-violet-700 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/30'
+                ? 'bg-violet-700 text-white shadow-sm shadow-violet-600/20'
+                : 'text-violet-700 dark:text-purple-400 hover:bg-violet-50 dark:hover:bg-purple-950/30'
             )}
           >
             <Sparkles className="h-3 w-3" />
@@ -663,7 +939,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                     <tr
                       key={sub.userId + idx}
                       onClick={() => setSelectedUser(sub)}
-                      className="hover:bg-violet-50/40 dark:hover:bg-violet-950/15 cursor-pointer transition-colors group"
+                      className="hover:bg-violet-50/40 dark:hover:bg-purple-950/15 cursor-pointer transition-colors group"
                     >
                       {/* Column 1: User ID & Contact */}
                       <td className="py-3.5 px-4">
@@ -716,8 +992,8 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-1.5">
                           {sub.currentPlan === 'yearly' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                              <Crown className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-cyan-50 dark:bg-cyan-950/50 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
+                              <Crown className="h-3 w-3 text-cyan-600 dark:text-cyan-400" />
                               Annual / Yearly
                             </span>
                           ) : sub.currentPlan === 'monthly' ? (
@@ -726,13 +1002,13 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                               Monthly
                             </span>
                           ) : sub.currentPlan === 'lifetime' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                              <Sparkles className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-violet-50 dark:bg-purple-950/50 text-violet-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <Sparkles className="h-3 w-3 text-violet-700 dark:text-purple-400" />
                               Lifetime Pro
                             </span>
                           ) : sub.currentPlan === 'trial' ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
-                              <Sparkles className="h-3 w-3 text-violet-600 dark:text-violet-400" />
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black bg-violet-50 dark:bg-purple-950/50 text-violet-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <Sparkles className="h-3 w-3 text-violet-700 dark:text-purple-400" />
                               7-Day Free Trial
                             </span>
                           ) : (
@@ -813,7 +1089,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 px-2 text-[11px] font-bold text-violet-600 dark:text-violet-400 group-hover:bg-violet-100/60 dark:group-hover:bg-violet-950/50 rounded-lg"
+                          className="h-7 px-2 text-[11px] font-bold text-violet-700 dark:text-purple-400 group-hover:bg-purple-100/60 dark:group-hover:bg-purple-950/50 rounded-lg"
                         >
                           History <ChevronRight className="h-3 w-3 ml-0.5" />
                         </Button>
@@ -835,7 +1111,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
               <DialogHeader className="border-b border-slate-100 dark:border-slate-800 pb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center font-bold">
+                    <div className="h-10 w-10 rounded-2xl bg-purple-100 dark:bg-purple-900/30 text-violet-700 dark:text-purple-400 flex items-center justify-center font-bold">
                       <ReceiptText className="h-5 w-5" />
                     </div>
                     <div>
@@ -940,7 +1216,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                     <span className="text-slate-500 font-medium flex items-center gap-1.5">
                       <Cpu className="h-3.5 w-3.5 text-slate-400" /> Bound Hardware ID:
                     </span>
-                    <div className="flex items-center gap-1 font-mono font-bold text-violet-600 dark:text-violet-400">
+                    <div className="flex items-center gap-1 font-mono font-bold text-violet-700 dark:text-purple-400">
                       {selectedUser.hwid}
                       <Button
                         variant="ghost"
@@ -1058,7 +1334,7 @@ export function AdminSubscribersView({ onBack, currentUser }: AdminSubscribersVi
                     size="sm"
                     onClick={handleSyncSelectedUser}
                     disabled={isSyncingUser}
-                    className="text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-sm"
+                    className="text-xs font-bold bg-violet-700 hover:bg-purple-800 text-white shadow-sm"
                   >
                     <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', isSyncingUser && 'animate-spin')} />
                     Sync Status to Firestore

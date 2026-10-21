@@ -67,7 +67,12 @@ function createBilling({ store, gateway, privateKey, now = Date.now }) {
   }
   async function entitlement(identity, deviceId) {
     if (!validId(deviceId)) fail('Invalid installation ID');
-    return { success: true, entitlement: signEntitlement(await account(identity), deviceId, privateKey, now()) };
+    const user = await account(identity);
+    // Only the server-verified Auth role grants administrator lifetime access.
+    // Renew short-lived signed access so role removal still takes effect offline.
+    const access = identity.admin === true ? { ...user, isActivated: true,
+      licenseDetails: { billing: 'lifetime', expiresAt: new Date(now() + 3 * DAY).toISOString() } } : user;
+    return { success: true, entitlement: signEntitlement(access, deviceId, privateKey, now()) };
   }
   async function createOrder(identity, input) {
     const { plan, currency, deviceId } = input;
@@ -116,6 +121,10 @@ function createBilling({ store, gateway, privateKey, now = Date.now }) {
       const entry = { ...(previous || {}), uid: order.uid, orderId: order.id, amount: order.amount, currency: order.currency, billing: order.plan,
         status, amountRefunded, date: new Date(payment.created_at * 1000).toISOString(),
         recordedAt: previous?.recordedAt || new Date(now()).toISOString(),
+        contact: payment.contact || previous?.contact || null,
+        cardCountry: payment.card?.country || previous?.cardCountry || null,
+        method: payment.method || previous?.method || null,
+        email: payment.email || previous?.email || null,
         ...(amountRefunded > 0 ? { refundedAt: previous?.refundedAt || refund?.recordedAt || new Date(now()).toISOString() } : {}) };
       tx.set('users', order.uid, rebuild(user, ledger.filter(p => p.id !== paymentId).concat({ ...entry, id: paymentId }), now()));
       tx.set('payments', paymentId, entry);

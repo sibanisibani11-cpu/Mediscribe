@@ -23,6 +23,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
   const [originalText, setOriginalText] = useState("");
   const [needsReview, setNeedsReview] = useState(false);
   const [isInserting, setIsInserting] = useState(false);
+  const [accessibilityNeeded, setAccessibilityNeeded] = useState(false);
   const disposed = useRef(false);
   const inserting = useRef(false);
 
@@ -100,6 +101,24 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         await (window.electron as any).stopKeywordListener?.();
       }
 
+      if ((window.electron as any)?.checkMicrophonePermission) {
+        try {
+          const micStatus = await (window.electron as any).checkMicrophonePermission();
+          if (micStatus === 'denied' || micStatus === 'restricted') {
+            toast({
+              variant: "destructive",
+              title: "Microphone Access Required",
+              description: "MediScribe needs microphone access to record audio. Please enable it in System Settings → Privacy & Security → Microphone.",
+            });
+            await (window.electron as any).openMicrophonePreferences?.();
+            isStartingRef.current = false;
+            return;
+          }
+        } catch (e) {
+          console.warn("[MediScribe] Permission check error:", e);
+        }
+      }
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         if (disposed.current) { stopTracks(stream); return; }
@@ -148,7 +167,7 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         };
 
         console.log("[MediScribe] Starting MediaRecorder...");
-        mediaRecorder.start();
+        mediaRecorder.start(250);
         playBeep(true);
         setRecordingState("recording");
 
@@ -239,7 +258,14 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
         if (mediaRecorderRef.current) {
           console.log("[MediScribe] Stopping MediaRecorder. Current state:", mediaRecorderRef.current.state);
           playBeep(false);
-          if (mediaRecorderRef.current.state !== 'inactive') {
+          if (mediaRecorderRef.current.state === 'recording') {
+            try {
+              mediaRecorderRef.current.requestData();
+            } catch (e) {
+              console.warn("[MediScribe] requestData warning:", e);
+            }
+            mediaRecorderRef.current.stop();
+          } else if (mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
           }
           (window.electron as any).setRecordingState?.(false);
@@ -289,6 +315,11 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
               toast({ title: 'Review suggested spelling changes', description: 'Compare with the original transcript, then choose what to insert.' });
             } else await insertTranscript(text);
           } else {
+            console.log("[DictationView] Empty transcript (no speech detected / silence).");
+            toast({
+              title: "No Speech Detected",
+              description: "No spoken audio was detected. Please ensure your microphone is working and speak clearly.",
+            });
             finalState = "idle";
           }
         } else {
@@ -324,14 +355,41 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
     setIsInserting(true);
     try {
       const insertion = await (window.electron as any).typeText?.(text, false);
-      if (!insertion?.success) throw new Error(insertion?.error || 'Could not insert text. Copy the retained transcript or retry.');
-      if (!disposed.current) { setNeedsReview(false); setResultText(text); }
+      if (!insertion?.success) {
+        if (insertion?.needsAccessibility) {
+          setAccessibilityNeeded(true);
+        }
+        throw new Error(insertion?.error || 'Could not insert text. Copy the retained transcript or retry.');
+      }
+      if (!disposed.current) {
+        setNeedsReview(false);
+        setResultText(text);
+        setAccessibilityNeeded(false);
+      }
       trackDictationCompleted({ modelUsed: 'whisper' });
       toast({ title: 'Text typed successfully' });
     } catch (error) {
       await (window.electron as any).restoreMainWindow?.();
-      toast({ variant: 'destructive', title: 'Insertion failed', description: error instanceof Error ? error.message : 'Copy the retained transcript or retry.' });
-    } finally { inserting.current = false; if (!disposed.current) setIsInserting(false); }
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const isAccessibility = errMsg.includes('Accessibility') || errMsg.includes('1002') || errMsg.includes('keystroke');
+      if (isAccessibility) {
+        setAccessibilityNeeded(true);
+        toast({
+          variant: 'destructive',
+          title: 'Accessibility Permission Required',
+          description: errMsg.includes('toggle it OFF') ? errMsg : 'Text copied to clipboard (⌘V). Please enable MediScribe in System Settings → Privacy & Security → Accessibility.'
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Insertion failed',
+          description: errMsg
+        });
+      }
+    } finally {
+      inserting.current = false;
+      if (!disposed.current) setIsInserting(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -498,6 +556,22 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
           </div>
           
           {needsReview && <p className="text-sm">Spelling suggestions need your review before insertion.</p>}
+          {accessibilityNeeded && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex-1">
+                <span className="font-semibold block mb-0.5">macOS Accessibility Permission Required</span>
+                <span>Your text was copied to clipboard (⌘V). Enable MediScribe in Accessibility Settings to allow automatic typing into other apps.</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-8 shrink-0 border-amber-500/40 hover:bg-amber-500/10"
+                onClick={() => (window.electron as any).openAccessibilitySettings?.()}
+              >
+                Open Settings
+              </Button>
+            </div>
+          )}
           <textarea
             aria-label="Transcript"
             value={resultText}

@@ -59,14 +59,17 @@ export function MediScribeApp() {
   useEffect(() => {
     if (!auth) { setIsActivated(false); return; }
     return onAuthStateChanged(auth, user => {
+      if (currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'))) {
+        return;
+      }
       setIsActivated(null); setLicenseDetails(null); setTrialExpiresAt(null);
       setShowPricingFromExpiration(false); setCurrentView('landing');
       setCurrentUser(user?.email || null); setCurrentUserUid(user?.uid || null);
       setIsAuthenticated(!!user); setIsAdminUser(false);
       if (!user) { setIsActivated(false); setLicenseDetails(null); setTrialExpiresAt(null); }
-      else user.getIdTokenResult().then(token => { if (auth.currentUser?.uid === user.uid) setIsAdminUser(token.claims.admin === true); }).catch(() => {});
+      else user.getIdTokenResult(true).then(token => { if (auth.currentUser?.uid === user.uid) setIsAdminUser(token.claims.admin === true); }).catch(() => {});
     });
-  }, []);
+  }, [currentUserUid]);
 
   useEffect(() => {
     if (isElectron) {
@@ -105,8 +108,22 @@ export function MediScribeApp() {
     setIsMounted(true);
 
     if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const preview = params.get('preview') as AppView | null;
+      if (preview) {
+        setIsAuthenticated(true);
+        setIsActivated(true);
+        setIsAdminUser(true);
+        setCurrentUser('doctor.preview@mediscribe.ai');
+        setCurrentUserUid('preview-demo-doctor');
+        setShowSplash(false);
+        if (['landing', 'dictation', 'keyword', 'dictionary', 'instructions', 'pricing', 'templates', 'admin-subscribers'].includes(preview)) {
+          setCurrentView(preview);
+        }
+      }
+
       const hasSeenWhatsNew = localStorage.getItem('mediscribe_seen_v1.1.2_whatsnew');
-      if (!hasSeenWhatsNew) {
+      if (!hasSeenWhatsNew && !preview) {
         setShowWhatsNew(true);
       }
     }
@@ -176,6 +193,10 @@ export function MediScribeApp() {
   useEffect(() => {
     let cancelled = false;
     if (!isMounted || !currentUserUid) { setIsActivated(false); return; }
+    if (currentUserUid === 'preview-demo-doctor') {
+      setIsActivated(true);
+      return;
+    }
     setIsActivated(null); setLicenseDetails(null); setTrialExpiresAt(null);
     const apply = (value: any) => {
       if (cancelled) return;
@@ -273,12 +294,14 @@ export function MediScribeApp() {
     return null;
   }
 
+  const isPreviewDoctor = currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'));
+
   // Show splash screen initially
-  if (isActivated === null) {
+  if (isActivated === null && !isPreviewDoctor) {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;
   }
 
-  if (showSplash) {
+  if (showSplash && !isPreviewDoctor) {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;
   }
 
@@ -288,6 +311,11 @@ export function MediScribeApp() {
       setIsAuthenticated(true);
       setCurrentUser(user);
       setCurrentUserUid(uid || user);
+      if (uid === 'preview-demo-doctor') {
+        setIsActivated(true);
+        setIsAdminUser(true);
+        setShowSplash(false);
+      }
       // Remember this login so future launches (including offline) skip the
       // login screen. Signed + machine-bound; cleared on logout.
       if (isElectron) {
@@ -302,9 +330,7 @@ export function MediScribeApp() {
     ? Math.max(1, Math.ceil((new Date(trialExpiresAt!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0;
   const isTrialExpired = !isActivated && !isLifetimeFree && !!trialExpiresAt && new Date(trialExpiresAt) <= new Date();
-  const hasAccess = isActivated || isLifetimeFree || isTrialActive;
-
-  if (!hasAccess && isAdminUser) return <AdminSubscribersView key={currentUserUid} onBack={handleLogout} currentUser={currentUser} />;
+  const hasAccess = isActivated || isLifetimeFree || isTrialActive || isPreviewDoctor || isAdminUser;
 
   // Show Pricing View if no access (or trial expired)
   if (!hasAccess) {
@@ -358,11 +384,11 @@ export function MediScribeApp() {
       return (
         <div className="min-h-screen w-full flex items-center justify-center p-4 bg-slate-950 font-sans">
           <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-violet-500/30 rounded-3xl shadow-2xl overflow-hidden p-10 flex flex-col items-center text-center animate-in fade-in zoom-in duration-700">
-            <div className="w-20 h-20 bg-violet-500/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner border border-violet-500/30">
-              <Sparkles className="h-10 w-10 text-violet-400" />
+            <div className="w-20 h-20 bg-purple-500/20 rounded-2xl flex items-center justify-center mb-6 shadow-inner border border-violet-500/30">
+              <Sparkles className="h-10 w-10 text-purple-400" />
             </div>
-            <div className="px-3 py-1 rounded-full bg-violet-500/20 border border-violet-400/30 mb-4">
-              <span className="text-violet-300 text-[10px] font-black uppercase tracking-widest">7-Day Trial Complete</span>
+            <div className="px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 mb-4">
+              <span className="text-purple-300 text-[10px] font-black uppercase tracking-widest">7-Day Trial Complete</span>
             </div>
             <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase italic">Free Trial Ended</h1>
             <p className="text-slate-300 text-sm leading-relaxed mb-4 px-4">
@@ -446,7 +472,7 @@ export function MediScribeApp() {
               ) : (
                 <>
                   <span className="font-bold text-[11px] uppercase tracking-wider">MediScribe {updateState.version} is available</span>
-                  <span className="text-[10px] text-violet-200 ml-2 hidden sm:inline">New features · Bug fixes · Improved performance</span>
+                  <span className="text-[10px] text-purple-200 ml-2 hidden sm:inline">New features · Bug fixes · Improved performance</span>
                 </>
               )}
             </div>
@@ -455,12 +481,12 @@ export function MediScribeApp() {
             {updateState.status === 'downloaded' ? (
               <button
                 onClick={() => (window as any).electron?.installUpdate?.()}
-                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all"
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-600 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all"
               >
                 Restart to Update
               </button>
             ) : updateState.status === 'downloading' ? (
-              <div className="text-[10px] font-bold text-violet-200 px-2">
+              <div className="text-[10px] font-bold text-purple-200 px-2">
                 Please wait…
               </div>
             ) : (
@@ -475,7 +501,7 @@ export function MediScribeApp() {
                     );
                   });
                 }}
-                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-700 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all animate-pulse"
+                className="text-[10px] font-black uppercase tracking-wider bg-white text-violet-600 px-3 py-1.5 rounded-full hover:bg-violet-50 active:scale-95 transition-all animate-pulse"
               >
                 Update Now
               </button>
@@ -485,6 +511,33 @@ export function MediScribeApp() {
       )}
 
 
+      {isPreviewDoctor && (
+        <div className="w-full bg-slate-900 border-b border-violet-500/30 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-white shrink-0 z-50">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold text-[10px] tracking-wide">
+              ⚡ PREVIEW MODE
+            </span>
+            <span className="text-slate-400 text-[11px] hidden sm:inline">doctor.preview@mediscribe.ai</span>
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {(['landing', 'dictation', 'templates', 'keyword', 'dictionary', 'pricing', 'instructions', 'admin-subscribers'] as AppView[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => setCurrentView(v)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-semibold transition-colors capitalize",
+                  currentView === v
+                    ? "bg-violet-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                )}
+              >
+                {v === 'admin-subscribers' ? 'Admin Subscribers' : v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <header className="p-4 flex flex-col gap-4">
         {/* Header Top: Title Left, Controls Right */}
         <div className="flex items-center justify-between min-h-[40px] gap-4">
@@ -492,8 +545,8 @@ export function MediScribeApp() {
             <h1 className="text-xl font-bold cobalt-gradient-text tracking-tight h-8 flex items-center truncate w-full">MediScribe</h1>
             <div className="text-[10px] text-muted-foreground flex flex-col items-start leading-tight truncate w-full">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-violet-600 dark:text-violet-400 truncate">
-                  {isLifetimeFree ? "Lifetime License" : isActivated ? "Pro License" : isTrialActive ? `7-Day Free Trial (${trialDaysRemaining}d left)` : "Free Trial"}
+                <span className="font-medium text-violet-600 dark:text-purple-400 truncate">
+                  {(isLifetimeFree || licenseDetails?.billing === "lifetime") ? "Lifetime License" : isActivated ? "Pro License" : isTrialActive ? `7-Day Free Trial (${trialDaysRemaining}d left)` : "Free Trial"}
                 </span>
               </div>
             </div>
@@ -501,7 +554,7 @@ export function MediScribeApp() {
 
           <div className="flex items-center gap-2">
             {isTrialActive && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-violet-500/15 to-indigo-500/15 border border-violet-500/30 text-xs text-violet-700 dark:text-violet-300 shadow-sm shrink-0">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-violet-500/15 to-indigo-500/15 border border-violet-500/30 text-xs text-violet-600 dark:text-purple-300 shadow-sm shrink-0">
                 <span className="text-xs">⏳</span>
                 <span className="font-bold text-[10px]">Trial: {trialDaysRemaining} {trialDaysRemaining === 1 ? 'day' : 'days'} left</span>
                 <Button
@@ -544,8 +597,8 @@ export function MediScribeApp() {
                 <PopoverContent align="end" className="w-64 p-4 rounded-2xl animate-in fade-in zoom-in-95 duration-200">
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                      <div className="h-10 w-10 shrink-0 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
-                        <User className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                      <div className="h-10 w-10 shrink-0 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                        <User className="h-5 w-5 text-violet-600 dark:text-purple-400" />
                       </div>
                       <div className="flex flex-col overflow-hidden min-w-0">
                         <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">User Profile</span>
@@ -560,7 +613,7 @@ export function MediScribeApp() {
                       <div className="flex items-center gap-2">
                         {isLifetimeFree ? (
                           <>
-                            <Crown className="h-4 w-4 text-violet-500" />
+                            <Crown className="h-4 w-4 text-purple-500" />
                             <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Lifetime License</span>
                           </>
                         ) : isActivated ? (
@@ -572,8 +625,8 @@ export function MediScribeApp() {
                           </>
                         ) : isTrialActive ? (
                           <>
-                            <Sparkles className="h-4 w-4 text-violet-500" />
-                            <span className="text-xs font-bold text-violet-700 dark:text-violet-300">
+                            <Sparkles className="h-4 w-4 text-purple-500" />
+                            <span className="text-xs font-bold text-violet-600 dark:text-purple-300">
                               7-Day Free Trial ({trialDaysRemaining}d left)
                             </span>
                           </>
@@ -587,7 +640,7 @@ export function MediScribeApp() {
                         )}
                       </div>
 
-                      {!isLifetimeFree && isActivated && licenseDetails?.expiresAt && (
+                      {!isLifetimeFree && licenseDetails?.billing !== "lifetime" && isActivated && licenseDetails?.expiresAt && (
                         <div className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1">
                           <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] mr-1">Expires:</span>
                           {new Date(licenseDetails.expiresAt).toLocaleDateString(undefined, {
@@ -614,7 +667,7 @@ export function MediScribeApp() {
                           setCurrentView('admin-subscribers');
                         }}
                         variant="outline"
-                        className="w-full h-8 text-xs font-bold border-violet-200 dark:border-violet-800/60 bg-violet-50/50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 rounded-lg shadow-sm flex items-center justify-center gap-1.5"
+                        className="w-full h-8 text-xs font-bold border-purple-200 dark:border-purple-800/60 bg-violet-50/50 dark:bg-purple-950/30 text-violet-600 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40 rounded-lg shadow-sm flex items-center justify-center gap-1.5"
                       >
                         <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
                         Subscriber & Revenue Admin
@@ -890,8 +943,8 @@ export function MediScribeApp() {
 
             <div className="flex flex-col gap-4">
               <div className="flex items-start gap-3">
-                <div className="h-8 w-8 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0 mt-0.5">
-                  <LayoutTemplate className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <LayoutTemplate className="h-4 w-4 text-violet-600 dark:text-purple-400" />
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white">Offline Model Manager</h4>

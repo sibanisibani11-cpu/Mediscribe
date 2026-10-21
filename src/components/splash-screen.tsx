@@ -1,38 +1,44 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Mic, Heart, Brain, Keyboard } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Mic, Heart, Brain, Keyboard, CloudOff } from 'lucide-react';
 
 interface SplashScreenProps {
   onComplete?: () => void;
 }
 
+// Display duration for the splash screen
+const SPLASH_VISIBLE_MS = 1400;
+const SPLASH_FADE_MS = 300;
+
 export function SplashScreen({ onComplete }: SplashScreenProps) {
   const [fadeOut, setFadeOut] = useState(false);
+  // Keep the latest callback in a ref so parent re-renders don't restart the timers
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
-    // Start fade out after 3 seconds
     const fadeTimer = setTimeout(() => {
       setFadeOut(true);
-    }, 3000);
+    }, SPLASH_VISIBLE_MS);
 
     // Call onComplete after fade out completes
     const completeTimer = setTimeout(() => {
-      onComplete?.();
-    }, 3500);
+      onCompleteRef.current?.();
+    }, SPLASH_VISIBLE_MS + SPLASH_FADE_MS);
 
     return () => {
       clearTimeout(fadeTimer);
       clearTimeout(completeTimer);
     };
-  }, [onComplete]);
+  }, []);
 
   return (
     <div
       className={`min-h-screen w-full flex flex-col items-center justify-center transition-all duration-500 ${fadeOut ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
         }`}
       style={{
-        background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #bae6fd 100%)'
+        background: 'linear-gradient(135deg, #fdfcfd 0%, #f5f3ff 50%, #ede9fe 100%)'
       }}
     >
       {/* Animated background particles */}
@@ -69,9 +75,15 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           MediScribe
         </h1>
 
-        <p className="text-lg text-slate-600/80 mb-8 animate-fade-in font-medium">
+        <p className="text-lg text-slate-600/80 mb-3 animate-fade-in font-medium">
           AI-Powered Medical Transcription
         </p>
+
+        {/* Offline indicator badge */}
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-violet-600/10 border border-violet-500/25 text-violet-900 text-xs font-semibold shadow-sm mb-8 animate-fade-in backdrop-blur-sm">
+          <CloudOff className="w-3.5 h-3.5 text-violet-700" />
+          <span>Works Offline • No Internet Connection Required</span>
+        </div>
 
         {/* Feature highlights */}
         <div className="flex gap-8 mb-12 animate-slide-up">

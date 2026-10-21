@@ -1,5 +1,10 @@
-'use strict';
-const { google } = require('googleapis');
+let _google = null;
+function getGoogle() {
+  if (!_google) {
+    _google = require('googleapis').google;
+  }
+  return _google;
+}
 const { BrowserWindow, shell, app, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +15,7 @@ let client;
 let activeFlow = false;
 function getOAuth2Client() {
   if (!client) {
-    client = new google.auth.OAuth2(config.googleClientId, config.googleDesktopClientSecret);
+    client = new (getGoogle().auth.OAuth2)(config.googleClientId, config.googleDesktopClientSecret);
     client.on('tokens', tokens => {
       try { saveToken({ ...(getToken() || {}), ...tokens }); } catch { console.error('[OAuth] Could not persist refreshed session'); }
     });
@@ -30,7 +35,8 @@ function saveToken(token) {
 }
 function getToken() {
   try {
-    if (!canEncrypt() || !fs.existsSync(tokenFile())) return null;
+    if (!fs.existsSync(tokenFile())) return null;
+    if (!canEncrypt()) return null;
     const token = JSON.parse(safeStorage.decryptString(fs.readFileSync(tokenFile())));
     getOAuth2Client().setCredentials(token);
     return token;
@@ -80,9 +86,7 @@ async function authenticateWithGoogle() {
       }
     });
     const timer = setTimeout(() => finish(new Error('Google sign-in timed out. Please retry.')), 180000);
-    server.on('error', () => finish(new Error('Could not start the local sign-in callback.')));
-    server.listen(0, '127.0.0.1', async () => {
-      redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+    const launchAuth = async () => {
       const authorizeUrl = getOAuth2Client().generateAuthUrl({ redirect_uri: redirectUri, access_type: 'offline', scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'consent' });
       try {
         authWindow = new BrowserWindow({ width: 440, height: 220, title: 'Google sign-in', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
@@ -92,12 +96,18 @@ async function authenticateWithGoogle() {
         authWindow.on('closed', () => finish(new Error('Google sign-in cancelled.')));
         await shell.openExternal(authorizeUrl);
       } catch { finish(new Error('Could not open Google sign-in.')); }
+    };
+
+    server.on('error', () => finish(new Error('Could not start the local sign-in callback.')));
+    server.listen(0, '127.0.0.1', () => {
+      redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+      launchAuth();
     });
   });
 }
 async function getDriveClient() {
   if (!getToken()) return null;
-  return google.drive({ version: 'v3', auth: getOAuth2Client() });
+  return getGoogle().drive({ version: 'v3', auth: getOAuth2Client() });
 }
 function logoutGoogle() {
   for (const file of [tokenFile(), path.join(app.getPath('userData'), 'google-token.json')]) if (fs.existsSync(file)) fs.unlinkSync(file);
