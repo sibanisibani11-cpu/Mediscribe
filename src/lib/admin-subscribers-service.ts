@@ -101,16 +101,10 @@ export interface AdminSubscribersResponse {
   error?: string;
 }
 
-export const ADMIN_EMAILS = new Set([
-  'jeetumdc@gmail.com',
-  'kalpadass@aiims.edu',
-  'admin@mediapp.store',
-  'support@mediapp.store',
-]);
-
-export function isAuthorizedAdmin(email?: string | null): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.has(email.toLowerCase().trim());
+// Admin authorization is cryptographically verified via Firebase Auth custom claims (token.claims.admin === true)
+export function isAuthorizedAdmin(_email?: string | null): boolean {
+  // Client-side email checks are insecure; the backend and token custom claims gate all privileged data.
+  return false;
 }
 
 export const ISO_MAP: Record<string, { name: string; flag: string }> = {

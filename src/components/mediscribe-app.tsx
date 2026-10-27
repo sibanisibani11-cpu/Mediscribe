@@ -59,7 +59,7 @@ export function MediScribeApp() {
   useEffect(() => {
     if (!auth) { setIsActivated(false); return; }
     return onAuthStateChanged(auth, user => {
-      if (currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'))) {
+      if (process.env.NODE_ENV === 'development' && (currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview')))) {
         return;
       }
       setIsActivated(null); setLicenseDetails(null); setTrialExpiresAt(null);
@@ -108,8 +108,9 @@ export function MediScribeApp() {
     setIsMounted(true);
 
     if (typeof window !== 'undefined') {
+      const isDev = process.env.NODE_ENV === 'development';
       const params = new URLSearchParams(window.location.search);
-      const preview = params.get('preview') as AppView | null;
+      const preview = isDev ? (params.get('preview') as AppView | null) : null;
       if (preview) {
         setIsAuthenticated(true);
         setIsActivated(true);
@@ -294,7 +295,7 @@ export function MediScribeApp() {
     return null;
   }
 
-  const isPreviewDoctor = currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview'));
+  const isPreviewDoctor = process.env.NODE_ENV === 'development' && (currentUserUid === 'preview-demo-doctor' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('preview')));
 
   // Show splash screen initially
   if (isActivated === null && !isPreviewDoctor) {
@@ -311,7 +312,7 @@ export function MediScribeApp() {
       setIsAuthenticated(true);
       setCurrentUser(user);
       setCurrentUserUid(uid || user);
-      if (uid === 'preview-demo-doctor') {
+      if (process.env.NODE_ENV === 'development' && uid === 'preview-demo-doctor') {
         setIsActivated(true);
         setIsAdminUser(true);
         setShowSplash(false);

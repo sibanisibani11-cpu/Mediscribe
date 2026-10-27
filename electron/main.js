@@ -981,6 +981,8 @@ function createFloatingButton() {
     }, 2000); // 2 seconds is enough and less resource intensive than 1s
 
     // Load the HTML file for the floating button
+    floatingButton.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    floatingButton.webContents.on('will-navigate', (event) => event.preventDefault());
     floatingButton.loadFile(path.join(__dirname, 'bubble-v2.html'));
 
     // Consolidate all initialization logic in a SINGLE did-finish-load listener
@@ -1172,6 +1174,9 @@ function createKeywordDialog(matches, selectedIndex = 0) {
     } else {
         keywordDialogWindow.setAlwaysOnTop(true, 'pop-up-menu', 1);
     }
+
+    keywordDialogWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    keywordDialogWindow.webContents.on('will-navigate', (event) => event.preventDefault());
 
     const htmlContent = `
     <!DOCTYPE html>

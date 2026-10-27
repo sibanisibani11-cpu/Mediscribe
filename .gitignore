@@ -55,14 +55,41 @@ yarn-error.log*
 next-env.d.ts
 
 .genkit/*
-.env*
+.env
+.env.*
+.env*.local
+*.env
+*.env.*
+**/.env*
+**/*.env*
 
-# firebase
+# Secrets, certificates, and credentials
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.keystore
+*.jks
+android-release.keystore
+
+# firebase and google credentials
 firebase-debug.log
 firestore-debug.log
 *-firebase-adminsdk-*.json
-firebase-admin-*.json
-service-account*.json
+*firebase-admin-*.json
+*service-account*.json
+*client_secret*.json
+client_secret*.json
+*credentials*.json
+*secret*.json
+
+# Razorpay, billing & private user CSVs
+rzp-key*.csv
+verified_users.csv
+recipients.json
+recipients.csv
 
 # Ignore large installer files to prevent git push errors
 /public/downloads/*.exe
@@ -72,9 +99,10 @@ service-account*.json
 # eslint cache
 .eslintcache
 
-# Developer bypass lock files - NEVER commit these
+# Developer bypass lock files and simulated data - NEVER commit these
 developer-subscription-bypass.lock
 electron/lifetime.lock
+local_simulated_users.json
 
 /server/node_modules/
 /server/.env*
@@ -83,7 +111,6 @@ electron/lifetime.lock
 
 # Local release inputs
 native-assets.json
-android-release.keystore
-rzp-key*.csv
-client_secret*.json
 /artifacts/
+/games/
+

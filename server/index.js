@@ -67,6 +67,23 @@ async function rateLimit(scope, subject, maximum) {
     tx.set('request_limits', id, { count: value.count + 1, until: value.until, expiresAt: new Date(value.until + 3600000) });
   });
 }
+const anonymousBuckets = new Map();
+function rateLimitAnonymous(subject, maximum = 60) {
+  if (!subject) return;
+  const now = Date.now();
+  const bucket = anonymousBuckets.get(subject);
+  if (!bucket || bucket.until <= now) {
+    anonymousBuckets.set(subject, { count: 1, until: now + 60000 });
+    if (anonymousBuckets.size > 5000) {
+      for (const [key, val] of anonymousBuckets) {
+        if (val.until <= now) anonymousBuckets.delete(key);
+      }
+    }
+    return;
+  }
+  if (bucket.count >= maximum) fail('Please try again shortly', 429);
+  bucket.count++;
+}
 const ISO_MAP = {
   IN: { name: 'India', flag: '🇮🇳' },
   US: { name: 'United States', flag: '🇺🇸' },
@@ -287,11 +304,18 @@ async function adminData(url) {
 
 }
 const server = http.createServer(async (req, res) => {
-  res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   try {
     const origin = req.headers.origin;
-    if (origin && origin !== 'null' && !allowedOrigins.has(origin)) fail('Origin is not allowed', 403);
-    if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
+    if (origin && !allowedOrigins.has(origin)) fail('Origin is not allowed', 403);
+    if (origin && allowedOrigins.has(origin)) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
     if (req.method === 'OPTIONS') { res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS'); res.writeHead(204); return res.end(); }
     if (req.url === '/health' && req.method === 'GET') return res.end(JSON.stringify({ ok: true }));
     const url = new URL(req.url, 'https://localhost');
@@ -301,6 +325,7 @@ const server = http.createServer(async (req, res) => {
       const order = await store.get('orders', orderId);
       if (!order || order.paymentId || Date.now() - order.createdAt > 3600000) fail('Order expired or already paid', 409);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; connect-src https://api.razorpay.com https://checkout.razorpay.com; img-src 'self' data: https://*.razorpay.com; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'");
       const options = JSON.stringify({ key: process.env.RAZORPAY_KEY_ID, order_id: order.id, amount: order.amount, currency: order.currency, name: 'MediScribe', description: order.plan + ' subscription' }).replace(/</g, '\u003c');
       return res.end('<!doctype html><meta name="viewport" content="width=device-width"><title>MediScribe checkout</title><h1>MediScribe secure checkout</h1><p id="status">Complete payment, then return to the app. Keep your payment ID for recovery.</p><button id="pay">Pay securely</button><script src="https://checkout.razorpay.com/v1/checkout.js"></script><script>const options=' + options + ';options.handler=function(r){document.getElementById("status").textContent="Payment received: "+r.razorpay_payment_id+". Return to MediScribe to verify and activate access.";document.getElementById("pay").disabled=true;};document.getElementById("pay").onclick=function(){new Razorpay(options).open();};</script>');
     }
@@ -346,7 +371,11 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ success: true }));
     }
     const data = raw.length ? JSON.parse(raw) : {};
-    if (req.url === '/v1/telemetry' && req.method === 'POST') return res.end(JSON.stringify(await telemetry(data, req)));
+    if (req.url === '/v1/telemetry' && req.method === 'POST') {
+      const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+      rateLimitAnonymous('telemetry:' + clientIp, 60);
+      return res.end(JSON.stringify(await telemetry(data, req)));
+    }
     const user = await identity(req);
     await rateLimit('authenticated', user.uid, 120);
     let result;

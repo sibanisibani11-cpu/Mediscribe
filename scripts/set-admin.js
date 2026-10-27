@@ -4,9 +4,21 @@ const path = require('path');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 
-const serviceAccountPath = path.join(__dirname, '../studio-1170771809-75956-firebase-adminsdk-fbsvc-ab9705a130.json');
+const fs = require('fs');
+
+const envPath = process.env.FIREBASE_SERVICE_ACCOUNT || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+let serviceAccountPath = envPath ? path.resolve(envPath) : null;
+
+if (!serviceAccountPath || !fs.existsSync(serviceAccountPath)) {
+  const rootFiles = fs.readdirSync(path.join(__dirname, '..'));
+  const found = rootFiles.find(f => /firebase-adminsdk.*\.json$/.test(f) || /service-account.*\.json$/.test(f));
+  if (found) serviceAccountPath = path.join(__dirname, '..', found);
+}
 
 try {
+  if (!serviceAccountPath || !fs.existsSync(serviceAccountPath)) {
+    throw new Error('Service account key file not found. Set FIREBASE_SERVICE_ACCOUNT or place key in root.');
+  }
   const sa = require(serviceAccountPath);
   const app = initializeApp({ credential: cert(sa) });
   const auth = getAuth(app);
