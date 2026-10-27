@@ -578,6 +578,9 @@ export function DictationView({ isElectron: _isElectronProps }: DictationViewPro
             onChange={(e) => setResultText(e.target.value)}
             className="w-full min-h-[120px] p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-black/20 text-slate-800 dark:text-slate-200 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500/30"
           />
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 italic text-center leading-tight">
+            ⚠️ Clinical Notice: AI-assisted dictation — verify all dosages, abbreviations, and medical terms before charting.
+          </p>
           
           {isElectron && <Button disabled={isInserting} onClick={() => insertTranscript(resultText)} className="w-full">
             {isInserting ? 'Inserting…' : needsReview ? 'Accept and insert' : 'Insert transcript'}

@@ -2714,14 +2714,26 @@ function updateTrayMenu() {
                     type: 'info',
                     title: 'About MediScribe',
                     message: 'MediScribe - AI-Powered Medical Transcription',
-                    detail: 'Professional medical transcription with offline Whisper AI.\nDesigned for healthcare professionals.\n\nVersion 1.0.0'
+                    detail: `Professional medical transcription with offline Whisper AI.\nVersion ${app.getVersion()}\n\nClinical Disclaimer:\nMediScribe is an AI-assisted documentation tool and not a certified medical device. Healthcare professionals must independently review and verify all generated transcriptions before charting.\n\nBuilt with Meta Llama 3.2 • Powered by Whisper AI & FFmpeg.\n© ${new Date().getFullYear()} MediApp.store`
                 });
+            }
+        },
+        {
+            label: 'Privacy Policy',
+            click: () => {
+                shell.openExternal('https://mediapp.store/privacy');
+            }
+        },
+        {
+            label: 'Terms of Service',
+            click: () => {
+                shell.openExternal('https://mediapp.store/terms');
             }
         },
         {
             label: 'Help & Support',
             click: () => {
-                shell.openExternal('https://github.com/mediscribe/help');
+                shell.openExternal('https://mediapp.store/help');
             }
         },
         {

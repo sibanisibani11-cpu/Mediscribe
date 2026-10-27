@@ -97,10 +97,13 @@ export function InstructionsView({ onBack }: InstructionsViewProps) {
                   </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 flex gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
-                  <p className="text-[11px] text-amber-800 dark:text-amber-400 font-bold leading-relaxed">
-                    MediScribe works 100% OFFLINE. Once the models are downloaded, you can disconnect from the internet entirely for maximum patient data privacy.
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span className="text-xs font-bold text-amber-900 dark:text-amber-300">Privacy &amp; Clinical Recording Notice</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-400 font-medium leading-relaxed">
+                    MediScribe works 100% OFFLINE. Audio is transcribed on your local hardware and is never uploaded or transmitted to third-party servers. When dictating in clinical settings, ensure you have obtained any applicable patient recording consents required by local law.
                   </p>
                 </div>
               </CardContent>
