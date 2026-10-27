@@ -40,7 +40,7 @@ const PROMO_CODES: Record<string, { discount: number; label: string }> = {
   "CLINIC30":  { discount: 30, label: "30% Clinic Discount" },
 };
 
-export function PricingView({ onBack, isActivated, currentUser, backButtonText }: PricingViewProps) {
+export function PricingView({ onBack, isActivated: _isActivated, currentUser, backButtonText }: PricingViewProps) {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
   const [activationId, setActivationID] = useState("");
@@ -462,6 +462,26 @@ export function PricingView({ onBack, isActivated, currentUser, backButtonText }
                     Check Payment Status / Already Paid
                 </Button>
             )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[10px] text-slate-400">
+          <span>🔒 256-bit encrypted checkout</span>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => openExternalUrl('https://mediapp.store/terms')}
+            className="hover:text-violet-500 underline"
+          >
+            Terms &amp; Refund Policy
+          </button>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={() => openExternalUrl('https://mediapp.store/privacy')}
+            className="hover:text-violet-500 underline"
+          >
+            Privacy Policy
+          </button>
         </div>
       </div>
     </div>

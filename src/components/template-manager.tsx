@@ -52,7 +52,7 @@ interface TemplateManagerProps {
   embedded?: boolean;
 }
 
-export function TemplateManager({ onBack, embedded = false }: TemplateManagerProps) {
+export function TemplateManager({ onBack, embedded: _embedded = false }: TemplateManagerProps) {
   const ownerUid = useRef<string | undefined>(auth?.currentUser?.uid).current;
   const loadLocalTemplates = () => readAccountLibrary<Template>(STORAGE_KEY, ownerUid);
   const saveLocalTemplates = (records: Template[]) => writeAccountLibrary(STORAGE_KEY, ownerUid, records);
@@ -298,7 +298,6 @@ export function TemplateManager({ onBack, embedded = false }: TemplateManagerPro
   // ── Delete ──
   const handleDelete = async (id: string) => {
     try {
-    const tpl = templates.find(t => t.id === id);
     if (electron?.removeTemplate) {
       const res = await electron.removeTemplate(id);
       if (!res.success) throw new Error(res.error || "The template could not be saved.");

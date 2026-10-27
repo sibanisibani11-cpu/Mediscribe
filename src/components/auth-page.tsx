@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Eye, EyeOff, Loader2, Mail, Lock } from "lucide-react";
+import { openExternalUrl } from "../lib/utils";
 import { useToast } from "../hooks/use-toast";
 import { auth, isFirebaseConfigured } from "../lib/firebase";
 import { 
@@ -216,6 +217,25 @@ export function AuthPage({ onLogin }: AuthPageProps) {
                                     {isLogin ? "Sign up" : "Log in"}
                                 </button>
                             </p>
+                        </div>
+
+                        <div className="px-4 py-3 bg-slate-950/60 border-t border-slate-900 text-center text-[11px] text-slate-400">
+                            By continuing, you agree to our{" "}
+                            <button
+                                type="button"
+                                onClick={() => openExternalUrl('https://mediapp.store/terms')}
+                                className="text-violet-400 hover:text-violet-300 underline font-medium"
+                            >
+                                Terms of Service
+                            </button>{" "}
+                            and{" "}
+                            <button
+                                type="button"
+                                onClick={() => openExternalUrl('https://mediapp.store/privacy')}
+                                className="text-violet-400 hover:text-violet-300 underline font-medium"
+                            >
+                                Privacy Policy
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Mic, Keyboard, ArrowRight, Cloud, CloudOff, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate } from "lucide-react";
+import { Mic, Keyboard, ArrowRight, Cloud, CloudOff, CheckCircle2, Loader2, Sparkles, BookOpen, Crown, LayoutTemplate, AlertCircle } from "lucide-react";
 import { openExternalUrl } from "../lib/utils";
 import { Button } from "./ui/button";
 import { useState, useEffect } from "react";
@@ -329,6 +329,62 @@ export function LandingPage({ onSelectMode, onShowInstructions, onShowPricing }:
           </div>
         </div>
       </div>
+
+      {/* Clinical Disclaimer & Regulatory Notice */}
+      <div className="w-full max-w-2xl mt-6 p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 dark:bg-amber-950/20 backdrop-blur-md">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-left">
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+              Clinical Disclaimer & Regulatory Notice
+            </h4>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed mt-1">
+              MediScribe is an AI-assisted documentation and dictation tool. It is not a certified medical device and does not provide clinical diagnoses, treatment recommendations, or medical advice. Healthcare professionals are solely responsible for reviewing, verifying, and editing all generated text and prescriptions prior to clinical use or patient record entry.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Legal Links, Open Source & Model Attribution Footer */}
+      <footer className="w-full max-w-2xl mt-8 pt-6 pb-12 border-t border-slate-200/60 dark:border-slate-800/60 flex flex-col items-center gap-3 text-center">
+        <div className="flex flex-wrap items-center justify-center gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <button
+            onClick={() => openExternalUrl('https://mediapp.store/privacy')}
+            className="hover:text-violet-600 transition-colors"
+          >
+            Privacy Policy
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => openExternalUrl('https://mediapp.store/terms')}
+            className="hover:text-violet-600 transition-colors"
+          >
+            Terms of Service
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => openExternalUrl('mailto:support@mediapp.store')}
+            className="hover:text-violet-600 transition-colors"
+          >
+            Support
+          </button>
+          <span>•</span>
+          <button
+            onClick={() => openExternalUrl('https://mediapp.store')}
+            className="hover:text-violet-600 transition-colors"
+          >
+            mediapp.store
+          </button>
+        </div>
+
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">
+          Built with Meta Llama 3.2 • Powered by Whisper AI &amp; FFmpeg
+        </p>
+
+        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+          &copy; {new Date().getFullYear()} MediApp.store. All rights reserved.
+        </p>
+      </footer>
     </div>
   );
 }
